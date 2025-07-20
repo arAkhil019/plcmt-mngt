@@ -19,11 +19,12 @@ export default function AddActivityModal({
         activityType: 'Pre-placement Talk',
         interviewRound: 1,
         date: '',
+        time: '', // Optional time field
         mode: 'Offline',
         location: '',
         eligibleDepartments: [],
         spocName: '',
-        spocContact: '',
+        spocContact: '', // Can be email or phone
         status: 'Active',
         allowedUsers: [] // Users who can mark attendance
     });
@@ -31,6 +32,7 @@ export default function AddActivityModal({
     const [uploadedFile, setUploadedFile] = useState(null);
     const [availableUsers, setAvailableUsers] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState([]);
+    const [validationErrors, setValidationErrors] = useState({});
     const fileInputRef = useRef(null);
 
     useEffect(() => {
@@ -58,9 +60,83 @@ export default function AddActivityModal({
 
     if (!isOpen) return null;
 
+    // Validation functions
+    const validateEmail = (email) => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    };
+
+    const validatePhone = (phone) => {
+        // Indian phone number validation (10 digits, can start with +91)
+        const phoneRegex = /^(\+91|91)?[6-9]\d{9}$/;
+        return phoneRegex.test(phone.replace(/[\s-]/g, ''));
+    };
+
+    const validateDate = (date) => {
+        if (!date) return false;
+        const selectedDate = new Date(date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return selectedDate >= today;
+    };
+
+    const validateTime = (time) => {
+        if (!time) return true; // Time is optional
+        const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        return timeRegex.test(time);
+    };
+
+    const validateForm = () => {
+        const errors = {};
+
+        // Required field validations
+        if (!activity.companyName.trim()) {
+            errors.companyName = 'Company name is required';
+        }
+
+        if (!activity.date) {
+            errors.date = 'Date is required';
+        } else if (!validateDate(activity.date)) {
+            errors.date = 'Date must be today or in the future';
+        }
+
+        if (!activity.spocName.trim()) {
+            errors.spocName = 'SPOC name is required';
+        }
+
+        if (!activity.spocContact.trim()) {
+            errors.spocContact = 'SPOC contact is required';
+        } else {
+            const contact = activity.spocContact.trim();
+            if (!validateEmail(contact) && !validatePhone(contact)) {
+                errors.spocContact = 'Please enter a valid email address or phone number';
+            }
+        }
+
+        if (activity.time && !validateTime(activity.time)) {
+            errors.time = 'Please enter time in HH:MM format (24-hour)';
+        }
+
+        if (activity.mode === 'Offline' && !activity.location.trim()) {
+            errors.location = 'Location is required for offline activities';
+        }
+
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         setActivity(prev => ({ ...prev, [name]: value }));
+        
+        // Clear validation error when user starts typing
+        if (validationErrors[name]) {
+            setValidationErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[name];
+                return newErrors;
+            });
+        }
     };
 
     const handleAddDepartment = (e) => {
@@ -119,9 +195,13 @@ export default function AddActivityModal({
     const handleSubmit = (e) => {
         e.preventDefault();
         
+        // Validate form before submission
+        if (!validateForm()) {
+            return;
+        }
+        
         const newActivity = {
             ...activity,
-            id: Date.now(),
             students: []
         };
 
@@ -133,6 +213,7 @@ export default function AddActivityModal({
             activityType: 'Pre-placement Talk',
             interviewRound: 1,
             date: '',
+            time: '',
             mode: 'Offline',
             location: '',
             eligibleDepartments: [],
@@ -143,6 +224,7 @@ export default function AddActivityModal({
         });
         setSelectedUsers([]);
         setUploadedFile(null);
+        setValidationErrors({});
         onClose();
     };
 
@@ -170,23 +252,156 @@ export default function AddActivityModal({
                         {/* Row 1: Company & Activity Type */}
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm font-medium">Company Name</label>
+                                <label className="text-sm font-medium">Company Name *</label>
                                 <input 
                                     type="text" 
                                     name="companyName" 
                                     value={activity.companyName} 
                                     onChange={handleChange} 
                                     placeholder="Enter company name"
-                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.companyName 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
                                 />
+                                {validationErrors.companyName && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.companyName}</p>
+                                )}
                             </div>
                             <div>
                                 <label className="text-sm font-medium">Activity Type</label>
-                                <select name="activityType" value={activity.activityType} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3">
+                                <select 
+                                    name="activityType" 
+                                    value={activity.activityType} 
+                                    onChange={handleChange} 
+                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+                                >
                                     <option>Pre-placement Talk</option>
                                     <option>Online Assessment</option>
                                     <option>Interview Round</option>
+                                    <option>Group Discussion</option>
+                                    <option>Technical Interview</option>
+                                    <option>HR Interview</option>
+                                    <option>Final Selection</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        {/* Row 2: Date & Time */}
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm font-medium">Date *</label>
+                                <input 
+                                    type="date" 
+                                    name="date" 
+                                    value={activity.date} 
+                                    onChange={handleChange}
+                                    min={new Date().toISOString().split('T')[0]}
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.date 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.date && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.date}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">Time (Optional)</label>
+                                <input 
+                                    type="time" 
+                                    name="time" 
+                                    value={activity.time} 
+                                    onChange={handleChange}
+                                    placeholder="HH:MM"
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.time 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.time && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.time}</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Row 3: Mode & Location */}
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm font-medium">Mode</label>
+                                <select 
+                                    name="mode" 
+                                    value={activity.mode} 
+                                    onChange={handleChange} 
+                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+                                >
+                                    <option>Online</option>
+                                    <option>Offline</option>
+                                    <option>Hybrid</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">
+                                    Location {activity.mode === 'Offline' && '*'}
+                                </label>
+                                <input 
+                                    type="text" 
+                                    name="location" 
+                                    value={activity.location} 
+                                    onChange={handleChange} 
+                                    placeholder={activity.mode === 'Online' ? 'Meeting link (optional)' : 'Enter location'}
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.location 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.location && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.location}</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Row 4: SPOC Details */}
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm font-medium">SPOC Name *</label>
+                                <input 
+                                    type="text" 
+                                    name="spocName" 
+                                    value={activity.spocName} 
+                                    onChange={handleChange} 
+                                    placeholder="Enter SPOC name"
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.spocName 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.spocName && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.spocName}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">SPOC Contact * (Email or Phone)</label>
+                                <input 
+                                    type="text" 
+                                    name="spocContact" 
+                                    value={activity.spocContact} 
+                                    onChange={handleChange} 
+                                    placeholder="email@company.com or +91-9876543210"
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.spocContact 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.spocContact && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.spocContact}</p>
+                                )}
                             </div>
                         </div>
 
@@ -228,26 +443,8 @@ export default function AddActivityModal({
                                 <input type="number" name="interviewRound" value={activity.interviewRound} onChange={handleChange} min="1" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3" />
                             </div>
                         )}
-                        {/* Row 2: Date & Mode */}
-                        <div className="grid sm:grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm font-medium">Date</label>
-                                <input type="date" name="date" value={activity.date} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3" />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">Mode</label>
-                                <select name="mode" value={activity.mode} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3">
-                                    <option>Offline</option>
-                                    <option>Online</option>
-                                </select>
-                            </div>
-                        </div>
-                        {/* Row 3: Location/Platform */}
-                        <div>
-                            <label className="text-sm font-medium">{activity.mode === 'Offline' ? 'Venue' : 'Platform'}</label>
-                            <input type="text" name="location" value={activity.location} onChange={handleChange} placeholder={activity.mode === 'Offline' ? 'e.g., Auditorium' : 'e.g., Zoom Link'} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3" />
-                        </div>
-                        {/* Row 4: Eligible Departments */}
+
+                        {/* Row 5: Eligible Departments */}
                         <div>
                              <label className="text-sm font-medium">Eligible Departments</label>
                              <div className="grid grid-cols-3 gap-2 mt-1">
@@ -271,7 +468,8 @@ export default function AddActivityModal({
                                 ))}
                              </div>
                         </div>
-                        {/* Row 5: User Permissions */}
+
+                        {/* Row 6: User Permissions */}
                         <div>
                             <label className="text-sm font-medium">Attendance Marking Permissions</label>
                             <div className="mt-1">
@@ -301,15 +499,6 @@ export default function AddActivityModal({
                                 ))}
                             </div>
                             <p className="text-xs text-gray-500 mt-1">Select users who can mark attendance for this activity. Admins and activity creators always have access.</p>
-                        </div>
-
-                        {/* Row 6: SPOC Details */}
-                        <div>
-                            <label className="text-sm font-medium">Student Point of Contact</label>
-                            <div className="grid sm:grid-cols-2 gap-4 mt-1">
-                                <input type="text" name="spocName" value={activity.spocName} onChange={handleChange} placeholder="SPOC Name" className="rounded-md h-10 px-3" />
-                                <input type="text" name="spocContact" value={activity.spocContact} onChange={handleChange} placeholder="SPOC Contact (Phone/Email)" className="rounded-md h-10 px-3" />
-                            </div>
                         </div>
                     </CardContent>
                     <CardFooter className="justify-end">

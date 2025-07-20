@@ -48,7 +48,14 @@ export default function LoginForm({
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Placement Portal</CardTitle>
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <img 
+              src="/graduation-hat.svg" 
+              alt="Placerly Logo" 
+              className="h-8 w-8 object-contain"
+            />
+            <CardTitle className="text-2xl">Placerly</CardTitle>
+          </div>
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

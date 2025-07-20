@@ -11,6 +11,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { createAdminUser, createRegularUser } from '../lib/adminApi';
+import { activityLogsService, ACTIVITY_LOG_TYPES } from '../lib/activityLogsService';
 
 const AuthContext = createContext({});
 
@@ -77,10 +78,25 @@ export const AuthProvider = ({ children }) => {
         throw new Error('User profile not found. Please contact administrator.');
       }
       
+      const profileData = userDoc.data();
+      
       // Update last login timestamp
       await updateDoc(doc(db, 'users', result.user.uid), {
         lastLogin: serverTimestamp()
       });
+      
+      // Log the login activity
+      await activityLogsService.logActivity(
+        result.user.uid,
+        profileData.name,
+        profileData.email,
+        ACTIVITY_LOG_TYPES.LOGIN,
+        `User logged in successfully`,
+        { 
+          loginMethod: 'email_password',
+          userRole: profileData.role 
+        }
+      );
       
       return result;
     } catch (error) {
@@ -92,6 +108,21 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       setLoading(true);
+      
+      // Log the logout activity before signing out
+      if (user && userProfile) {
+        await activityLogsService.logActivity(
+          user.uid,
+          userProfile.name,
+          userProfile.email,
+          ACTIVITY_LOG_TYPES.LOGOUT,
+          `User logged out successfully`,
+          { 
+            userRole: userProfile.role 
+          }
+        );
+      }
+      
       await signOut(auth);
       // Clear all state
       setUser(null);

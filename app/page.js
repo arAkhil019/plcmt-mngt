@@ -7,6 +7,8 @@ import { initialCompanies } from '../lib/data';
 import { QrCodeIcon, UsersIcon, ActivityIcon, LogOutIcon } from '../components/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { logActivity, ACTIVITY_TYPES } from '../utils/activityLogger';
+import { activitiesService } from '../lib/activitiesService';
+import { activityLogsService, ACTIVITY_LOG_TYPES } from '../lib/activityLogsService';
 import Dashboard from '../components/dashboard';
 import BarcodeScannerPage from '../components/scanner';
 import AttendanceView from '../components/attendance-view';
@@ -74,6 +76,25 @@ export default function Home() {
         }
     }, [user, userProfile, loading]);
 
+    // Load activities from Firebase when user is authenticated
+    useEffect(() => {
+        const loadActivities = async () => {
+            if (user && userProfile && !loading) {
+                try {
+                    // All authenticated users can see all activities
+                    const activitiesData = await activitiesService.getAllActivities();
+                    setActivities(activitiesData);
+                } catch (error) {
+                    console.error('Error loading activities:', error);
+                    // Keep empty activities array on error
+                    setActivities([]);
+                }
+            }
+        };
+
+        loadActivities();
+    }, [user, userProfile, loading]);
+
     // All hooks must be called before any return or conditional logic
     const hasPermission = (requiredRole) => {
         if (userProfile?.role === 'admin') return true;
@@ -113,41 +134,66 @@ export default function Home() {
         setEditActivityModal({ isOpen: true, activity });
     };
 
-    const handleUpdateActivity = (updatedActivity, uploadedFile) => {
+    const handleUpdateActivity = async (updatedActivity, uploadedFile) => {
         // First, validate that all required fields are filled
         if (!updatedActivity.companyName.trim() || !updatedActivity.date) {
             alert('Please enter a company name and select a date.');
             return;
         }
-        if (uploadedFile) {
-            // Process the uploaded file for student data update
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = window.XLSX.read(data, { type: 'array' });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                    const headers = json[0] || [];
-                    setColMapModalData({ 
-                        isOpen: true, 
-                        activityId: updatedActivity.id, 
-                        file: uploadedFile, 
-                        headers: headers,
-                        updatedActivity: updatedActivity
-                    });
-                } catch (error) {
-                    console.error("Error reading Excel file:", error);
-                    alert("Failed to read the Excel file. Please ensure it's a valid Excel file (.xlsx or .xls).");
-                }
-            };
-            reader.readAsArrayBuffer(uploadedFile);
-        } else {
-            // Update activity without student data change
-            setActivities(prev => prev.map(a => a.id === updatedActivity.id ? updatedActivity : a));
+
+        try {
+            if (uploadedFile) {
+                // Process the uploaded file for student data update
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = window.XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                        const headers = json[0] || [];
+                        setColMapModalData({ 
+                            isOpen: true, 
+                            activityId: updatedActivity.id, 
+                            file: uploadedFile, 
+                            headers: headers,
+                            updatedActivity: updatedActivity
+                        });
+                    } catch (error) {
+                        console.error("Error reading Excel file:", error);
+                        alert("Failed to read the Excel file. Please ensure it's a valid Excel file (.xlsx or .xls).");
+                    }
+                };
+                reader.readAsArrayBuffer(uploadedFile);
+            } else {
+                // Update activity without student data change
+                const updated = await activitiesService.updateActivity(
+                    updatedActivity.id,
+                    updatedActivity,
+                    { id: userProfile?.id, name: userProfile?.name }
+                );
+                setActivities(prev => prev.map(a => a.id === updatedActivity.id ? updated : a));
+                
+                // Log the activity update
+                await activityLogsService.logActivity(
+                    userProfile?.id,
+                    userProfile?.name,
+                    userProfile?.email,
+                    ACTIVITY_LOG_TYPES.UPDATE_ACTIVITY,
+                    `Updated activity: ${updated.companyName} - ${updated.activityType}`,
+                    {
+                        activityId: updated.id,
+                        companyName: updated.companyName,
+                        activityType: updated.activityType
+                    }
+                );
+            }
+            setEditActivityModal({ isOpen: false, activity: null });
+        } catch (error) {
+            console.error('Error updating activity:', error);
+            alert('Failed to update activity. Please try again.');
         }
-        setEditActivityModal({ isOpen: false, activity: null });
     };
 
     const handleBackToDashboard = () => {
@@ -155,39 +201,72 @@ export default function Home() {
         setSelectedActivity(null);
     };
 
-    const handleMarkAttendance = useCallback((activityId, studentId) => {
+    const handleMarkAttendance = useCallback(async (activityId, studentId) => {
         const activity = activities.find(a => a.id === activityId);
         if (!activity?.students.some(s => s.id === studentId)) return;
+        
         // Check if user has permission to mark attendance
         if (!canMarkAttendance(activity)) {
             alert('You do not have permission to mark attendance for this activity.');
             return;
         }
-        setAttendance(prev => {
-            const activityAttendance = prev[activityId] || [];
-            if (activityAttendance.some(att => att.studentId === studentId)) return prev;
+
+        // Check if student is already marked present
+        const student = activity.students.find(s => s.id === studentId);
+        if (student?.attendance) {
+            alert('Student attendance is already marked.');
+            return;
+        }
+
+        try {
+            // Update attendance in Firebase
+            const updatedActivity = await activitiesService.updateStudentAttendance(
+                activityId,
+                studentId,
+                true,
+                { id: userProfile?.id, name: userProfile?.name }
+            );
+
+            // Update local state
+            setActivities(prev => prev.map(a => a.id === activityId ? updatedActivity : a));
+
             // Log the attendance marking
-            const student = activity.students.find(s => s.id === studentId);
-            logActivity(
+            await activityLogsService.logActivity(
                 userProfile?.id,
                 userProfile?.name,
                 userProfile?.email,
-                ACTIVITY_TYPES.MARK_ATTENDANCE,
-                `Marked attendance for ${student?.name || studentId} in ${activity.companyName} - ${activity.activityType}`
+                ACTIVITY_LOG_TYPES.MARK_ATTENDANCE,
+                `Marked attendance for ${student?.name || studentId} in ${activity.companyName} - ${activity.activityType}`,
+                {
+                    activityId: activityId,
+                    studentId: studentId,
+                    studentName: student?.name,
+                    companyName: activity.companyName,
+                    activityType: activity.activityType
+                }
             );
-            return { 
-                ...prev, 
-                [activityId]: [...activityAttendance, { 
-                    studentId, 
-                    timestamp: new Date().toISOString(),
-                    markedBy: userProfile?.id,
-                    markedByName: userProfile?.name
-                }] 
-            };
-        });
+
+            // Also update the legacy attendance state for backward compatibility
+            setAttendance(prev => {
+                const activityAttendance = prev[activityId] || [];
+                if (activityAttendance.some(att => att.studentId === studentId)) return prev;
+                return { 
+                    ...prev, 
+                    [activityId]: [...activityAttendance, { 
+                        studentId, 
+                        timestamp: new Date().toISOString(),
+                        markedBy: userProfile?.id,
+                        markedByName: userProfile?.name
+                    }] 
+                };
+            });
+        } catch (error) {
+            console.error('Error marking attendance:', error);
+            alert('Failed to mark attendance. Please try again.');
+        }
     }, [activities, userProfile, canMarkAttendance]);
 
-    const handleAddActivity = (newActivity, uploadedFile) => {
+    const handleAddActivity = async (newActivity, uploadedFile) => {
         // Only admins and placement coordinators can create activities
         if (!hasPermission('placement_coordinator')) {
             alert('You do not have permission to create activities.');
@@ -198,48 +277,99 @@ export default function Home() {
             alert('Please enter a company name and select a date.');
             return;
         }
-        // Add creator information
-        const activityWithCreator = {
-            ...newActivity,
-            createdBy: userProfile?.id,
-            createdByName: userProfile?.name,
-            createdAt: new Date().toISOString()
-        };
-        if (uploadedFile) {
-            // Process the uploaded file for student data
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = window.XLSX.read(data, { type: 'array' });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                    const headers = json[0] || [];
-                    setColMapModalData({ 
-                        isOpen: true, 
-                        activityId: activityWithCreator.id, 
-                        file: uploadedFile, 
-                        headers: headers,
-                        newActivity: activityWithCreator
-                    });
-                } catch (error) {
-                    console.error("Error reading Excel file:", error);
-                    alert("Failed to read the Excel file. Please ensure it's a valid Excel file (.xlsx or .xls).");
-                }
-            };
-            reader.readAsArrayBuffer(uploadedFile);
-        } else {
-            // Add activity without student data
-            setActivities(prev => [...prev, activityWithCreator].sort((a, b) => new Date(a.date) - new Date(b.date)));
-            // Log the activity creation
-            logActivity(
-                userProfile?.id,
-                userProfile?.name,
-                userProfile?.email,
-                ACTIVITY_TYPES.CREATE_ACTIVITY,
-                `Created activity: ${activityWithCreator.companyName} - ${activityWithCreator.activityType}`
-            );
+
+        try {
+            if (uploadedFile) {
+                // Process the uploaded file for student data
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = window.XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                        const headers = json[0] || [];
+                        
+                        // Clean the activity data before sending to Firebase
+                        const cleanActivityData = {
+                            companyName: newActivity.companyName.trim(),
+                            activityType: newActivity.activityType,
+                            interviewRound: newActivity.interviewRound || 1,
+                            date: newActivity.date,
+                            time: newActivity.time || '',
+                            mode: newActivity.mode,
+                            location: newActivity.location.trim(),
+                            eligibleDepartments: newActivity.eligibleDepartments || [],
+                            spocName: newActivity.spocName.trim(),
+                            spocContact: newActivity.spocContact.trim(),
+                            status: newActivity.status || 'Active',
+                            allowedUsers: newActivity.allowedUsers || []
+                        };
+                        
+                        // Create activity first in Firebase
+                        console.log('Creating activity with clean data:', cleanActivityData);
+                        const createdActivity = await activitiesService.createActivity(
+                            cleanActivityData,
+                            { id: userProfile?.id, name: userProfile?.name }
+                        );
+                        
+                        setColMapModalData({ 
+                            isOpen: true, 
+                            activityId: createdActivity.id, 
+                            file: uploadedFile, 
+                            headers: headers,
+                            newActivity: createdActivity
+                        });
+                    } catch (error) {
+                        console.error("Error reading Excel file or creating activity:", error);
+                        alert("Failed to process the Excel file or create activity. Please check the file format and try again.");
+                    }
+                };
+                reader.readAsArrayBuffer(uploadedFile);
+            } else {
+                // Clean the activity data before sending to Firebase
+                const cleanActivityData = {
+                    companyName: newActivity.companyName.trim(),
+                    activityType: newActivity.activityType,
+                    interviewRound: newActivity.interviewRound || 1,
+                    date: newActivity.date,
+                    time: newActivity.time || '',
+                    mode: newActivity.mode,
+                    location: newActivity.location.trim(),
+                    eligibleDepartments: newActivity.eligibleDepartments || [],
+                    spocName: newActivity.spocName.trim(),
+                    spocContact: newActivity.spocContact.trim(),
+                    status: newActivity.status || 'Active',
+                    allowedUsers: newActivity.allowedUsers || []
+                };
+                
+                // Create activity without student data
+                console.log('Creating activity without file:', cleanActivityData);
+                const createdActivity = await activitiesService.createActivity(
+                    cleanActivityData,
+                    { id: userProfile?.id, name: userProfile?.name }
+                );
+                
+                setActivities(prev => [...prev, createdActivity].sort((a, b) => new Date(a.date) - new Date(b.date)));
+                
+                // Log the activity creation
+                await activityLogsService.logActivity(
+                    userProfile?.id,
+                    userProfile?.name,
+                    userProfile?.email,
+                    ACTIVITY_LOG_TYPES.CREATE_ACTIVITY,
+                    `Created activity: ${createdActivity.companyName} - ${createdActivity.activityType}`,
+                    { 
+                        activityId: createdActivity.id,
+                        companyName: createdActivity.companyName,
+                        activityType: createdActivity.activityType 
+                    }
+                );
+            }
+        } catch (error) {
+            console.error('Error creating activity:', error);
+            alert('Failed to create activity. Please try again.');
         }
     };
 
@@ -265,38 +395,69 @@ export default function Home() {
         setColMapModalData({ isOpen: false, activityId: null, file: null, headers: [], newActivity: null, updatedActivity: null });
     };
 
-    const handleColumnMappingSubmit = (mapping) => {
+    const handleColumnMappingSubmit = async (mapping) => {
         const { activityId, file, newActivity, updatedActivity } = colMapModalData;
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const data = new Uint8Array(e.target.result);
                 const workbook = window.XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const json = window.XLSX.utils.sheet_to_json(worksheet);
-                const newStudents = json.map((row, index) => ({
-                    id: String(row[mapping.id] || `MISSING_ID_${index}`),
-                    name: String(row[mapping.name] || 'N/A'),
-                    roll: String(row[mapping.roll] || ''),
-                    department: String(row[mapping.department] || ''),
-                }));
+                const newStudents = json.map((row, index) => {
+                    // Skip empty rows
+                    if (!row || Object.keys(row).length === 0) return null;
+                    
+                    const studentId = String(row[mapping.id] || `MISSING_ID_${index}`).trim();
+                    const studentName = String(row[mapping.name] || 'N/A').trim();
+                    const rollNumber = mapping.roll ? String(row[mapping.roll] || '').trim() : '';
+                    const department = mapping.department ? String(row[mapping.department] || '').trim() : '';
+                    
+                    // Skip rows with empty essential data
+                    if (!studentId || studentId === `MISSING_ID_${index}` || !studentName || studentName === 'N/A') {
+                        return null;
+                    }
+                    
+                    return {
+                        id: studentId,
+                        name: studentName,
+                        roll: rollNumber,
+                        department: department,
+                        attendance: false // Initialize attendance as false
+                    };
+                }).filter(student => student !== null); // Remove null entries
+
                 if (newActivity) {
                     // This is a new activity being created with file upload
-                    const activityWithStudents = { ...newActivity, students: newStudents };
-                    setActivities(prev => [...prev, activityWithStudents].sort((a, b) => new Date(a.date) - new Date(b.date)));
+                    const updatedActivity = await activitiesService.addStudentsToActivity(
+                        activityId,
+                        newStudents,
+                        { id: userProfile?.id, name: userProfile?.name }
+                    );
+                    setActivities(prev => [...prev, updatedActivity].sort((a, b) => new Date(a.date) - new Date(b.date)));
                 } else if (updatedActivity) {
                     // This is updating an existing activity via edit modal
-                    const activityWithUpdatedStudents = { ...updatedActivity, students: newStudents };
-                    setActivities(prev => prev.map(a => a.id === activityId ? activityWithUpdatedStudents : a));
+                    const updated = await activitiesService.addStudentsToActivity(
+                        activityId,
+                        newStudents,
+                        { id: userProfile?.id, name: userProfile?.name }
+                    );
+                    setActivities(prev => prev.map(a => a.id === activityId ? updated : a));
                 } else {
                     // This is updating an existing activity (legacy flow)
-                    setActivities(prev => prev.map(a => a.id === activityId ? { ...a, students: newStudents } : a));
+                    const updated = await activitiesService.addStudentsToActivity(
+                        activityId,
+                        newStudents,
+                        { id: userProfile?.id, name: userProfile?.name }
+                    );
+                    setActivities(prev => prev.map(a => a.id === activityId ? updated : a));
                 }
                 alert(`Successfully uploaded ${newStudents.length} students.`);
                 handleColMapModalClose();
             } catch (error) {
-                alert("Failed to parse the Excel file with mapping.");
+                console.error('Error uploading students:', error);
+                alert("Failed to parse the Excel file with mapping or update the database.");
             }
         };
         reader.readAsArrayBuffer(file);
@@ -369,8 +530,12 @@ export default function Home() {
                 <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                     <nav className="container mx-auto px-4 lg:px-6 h-16 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <QrCodeIcon className="h-6 w-6 text-gray-900 dark:text-white" />
-                            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Placement Portal</h1>
+                            <img 
+                                src="/graduation-hat.svg" 
+                                alt="Placerly Logo" 
+                                className="h-6 w-6 object-contain"
+                            />
+                            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Placerly</h1>
                         </div>
                         <div className="flex items-center gap-4">
                             <div className="flex items-center gap-2">

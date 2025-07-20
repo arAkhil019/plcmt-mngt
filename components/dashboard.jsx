@@ -37,13 +37,20 @@ export default function Dashboard({
     <div className="w-full max-w-7xl mx-auto space-y-8">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Placement Activities
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            Manage all placement activities and track attendance.
-          </p>
+        <div className="flex items-center gap-4">
+          <img 
+            src="/graduation-hat.svg" 
+            alt="Placerly Logo" 
+            className="h-12 w-12 object-contain"
+          />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Placerly
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400">
+              Manage all placement activities and track attendance.
+            </p>
+          </div>
         </div>
         <Button onClick={onAddActivityClick} className="w-full sm:w-auto">
           + Add Activity

@@ -1,0 +1,102 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isPlacementCoordinator() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'placement_coordinator';
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Read permissions
+      allow read: if isAuthenticated() && (
+        // Users can read their own profile
+        userId == request.auth.uid ||
+        // Or read other active users for permission assignments
+        resource.data.isActive == true
+      );
+      
+      // Write permissions
+      allow create: if isAdmin() && 
+                    request.resource.data.keys().hasAll(['name', 'email', 'role', 'isActive', 'createdAt']) &&
+                    request.resource.data.createdAt == request.time;
+      
+      allow update: if isAdmin() || 
+                    (userId == request.auth.uid && 
+                     // Users can only update their own name and lastLogin, not role or isActive
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'lastLogin']));
+      
+      allow delete: if isAdmin();
+    }
+
+    // Activities collection
+    match /activities/{activityId} {
+      // Read permissions - ALL authenticated users can view all activities
+      allow read: if request.auth != null;
+      
+      // Create permissions
+      allow create: if request.auth != null && 
+                    (isAdmin() || isPlacementCoordinator()) && 
+                    request.resource.data.keys().hasAll(['companyName', 'activityType', 'date', 'mode', 'createdBy', 'createdAt']) &&
+                    request.resource.data.createdBy == request.auth.uid &&
+                    request.resource.data.createdAt == request.time;
+      
+      // Update permissions - Limited based on role and operation type
+      allow update: if request.auth != null && (
+        // Admin can update any activity
+        isAdmin() ||
+        // Activity creator can update their activities
+        resource.data.createdBy == request.auth.uid ||
+        // Assigned attendance markers can ONLY update attendance-related fields
+        (request.auth.uid in resource.data.get('attendanceMarkers', []) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['students', 'updatedAt']) &&
+         // Ensure only attendance status is being modified, not student data structure
+         request.resource.data.students.size() == resource.data.students.size())
+      );
+      
+      // Delete permissions
+      allow delete: if isAdmin() || resource.data.createdBy == request.auth.uid;
+    }
+
+    // Activity Logs collection
+    match /activityLogs/{logId} {
+      // Read permissions
+      allow read: if isAuthenticated() && (
+        // Admin can read all logs
+        isAdmin() ||
+        // Users can read their own logs
+        resource.data.userId == request.auth.uid
+      );
+      
+      // Create permissions - users can log their own actions
+      allow create: if isAuthenticated() && 
+                    request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'action', 'description', 'timestamp']) &&
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.timestamp == request.time;
+      
+      // Update permissions - logs are immutable for audit purposes
+      allow update: if false;
+      
+      // Delete permissions - only admin for emergency cleanup
+      allow delete: if isAdmin();
+    }
+
+    // Default rule for any other collections
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

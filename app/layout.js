@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Placement Management Portal",
+  title: "Placerly",
   description: "Manage placement activities and track student attendance",
 };
 
