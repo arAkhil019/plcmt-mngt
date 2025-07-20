@@ -17,6 +17,7 @@ import AddActivityModal from '../components/AddActivityModal';
 import EditActivityModal from '../components/EditActivityModal';
 import LoginForm from '../components/LoginForm';
 import UserManagement from '../components/UserManagement';
+import StudentManagement from '../components/StudentManagement';
 import ActivityLogs from '../components/ActivityLogs';
 
 // UI Component Primitives
@@ -470,6 +471,7 @@ export default function Home() {
     const AddActivityModalWithUI = (props) => <AddActivityModal {...props} {...uiComponents} />;
     const EditActivityModalWithUI = (props) => <EditActivityModal {...props} {...uiComponents} />;
     const UserManagementWithUI = (props) => <UserManagement {...props} {...uiComponents} />;
+    const StudentManagementWithUI = (props) => <StudentManagement {...props} uiComponents={uiComponents} />;
     const ActivityLogsWithUI = (props) => <ActivityLogs {...props} {...uiComponents} />;
 
     const handleLogout = async () => {
@@ -563,6 +565,17 @@ export default function Home() {
                                             Users
                                         </Button>
                                         <Button 
+                                            variant={currentPage === 'students' ? 'default' : 'outline'}
+                                            onClick={() => {
+                                                setCurrentPage('students');
+                                                setSelectedActivity(null);
+                                            }}
+                                            size="sm"
+                                        >
+                                            🎓
+                                            Students
+                                        </Button>
+                                        <Button 
                                             variant={currentPage === 'logs' ? 'default' : 'outline'}
                                             onClick={() => {
                                                 setCurrentPage('logs');
@@ -602,6 +615,9 @@ export default function Home() {
                     )}
                     {currentPage === 'users' && userProfile?.role === 'admin' && (
                         <UserManagementWithUI />
+                    )}
+                    {currentPage === 'students' && userProfile?.role === 'admin' && (
+                        <StudentManagementWithUI />
                     )}
                     {currentPage === 'logs' && userProfile?.role === 'admin' && (
                         <ActivityLogsWithUI />

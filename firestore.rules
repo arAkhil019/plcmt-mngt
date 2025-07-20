@@ -93,6 +93,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Student collections - department-wise (students_*)
+    match /{path=**} {
+      // Student collections pattern: students_computer_science_engineering, etc.
+      allow read, write: if isAdmin() && 
+                         request.auth != null && 
+                         resource != null;
+    }
+
     // Default rule for any other collections
     match /{document=**} {
       allow read: if isAuthenticated();
