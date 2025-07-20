@@ -1,8 +1,6 @@
 // components/AddActivityModal.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { XIcon, UploadIcon } from './icons';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 
 export default function AddActivityModal({
     isOpen,
@@ -24,37 +22,11 @@ export default function AddActivityModal({
         eligibleDepartments: [],
         spocName: '',
         spocContact: '',
-        status: 'Active',
-        allowedUsers: [] // Users who can mark attendance
+        status: 'Active'
     });
     const [currentDept, setCurrentDept] = useState({ name: '', year: '4th Year' });
     const [uploadedFile, setUploadedFile] = useState(null);
-    const [availableUsers, setAvailableUsers] = useState([]);
-    const [selectedUsers, setSelectedUsers] = useState([]);
     const fileInputRef = useRef(null);
-
-    useEffect(() => {
-        if (isOpen) {
-            fetchAvailableUsers();
-        }
-    }, [isOpen]);
-
-    const fetchAvailableUsers = async () => {
-        try {
-            const usersQuery = query(
-                collection(db, 'users'),
-                where('isActive', '==', true)
-            );
-            const snapshot = await getDocs(usersQuery);
-            const users = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })).filter(user => user.role !== 'admin'); // Exclude admins as they have full access
-            setAvailableUsers(users);
-        } catch (error) {
-            console.error('Error fetching users:', error);
-        }
-    };
 
     if (!isOpen) return null;
 
@@ -95,27 +67,6 @@ export default function AddActivityModal({
         e.target.value = null;
     };
 
-    const handleAddUser = (userId) => {
-        const user = availableUsers.find(u => u.id === userId);
-        if (user && !selectedUsers.find(u => u.id === userId)) {
-            const newSelectedUsers = [...selectedUsers, user];
-            setSelectedUsers(newSelectedUsers);
-            setActivity(prev => ({
-                ...prev,
-                allowedUsers: newSelectedUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))
-            }));
-        }
-    };
-
-    const handleRemoveUser = (userId) => {
-        const newSelectedUsers = selectedUsers.filter(u => u.id !== userId);
-        setSelectedUsers(newSelectedUsers);
-        setActivity(prev => ({
-            ...prev,
-            allowedUsers: newSelectedUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))
-        }));
-    };
-
     const handleSubmit = (e) => {
         e.preventDefault();
         
@@ -138,10 +89,8 @@ export default function AddActivityModal({
             eligibleDepartments: [],
             spocName: '',
             spocContact: '',
-            status: 'Active',
-            allowedUsers: []
+            status: 'Active'
         });
-        setSelectedUsers([]);
         setUploadedFile(null);
         onClose();
     };
@@ -271,39 +220,7 @@ export default function AddActivityModal({
                                 ))}
                              </div>
                         </div>
-                        {/* Row 5: User Permissions */}
-                        <div>
-                            <label className="text-sm font-medium">Attendance Marking Permissions</label>
-                            <div className="mt-1">
-                                <select 
-                                    onChange={(e) => e.target.value && handleAddUser(e.target.value)}
-                                    value=""
-                                    className="w-full h-10 px-3 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
-                                >
-                                    <option value="">Select users who can mark attendance...</option>
-                                    {availableUsers
-                                        .filter(user => !selectedUsers.find(s => s.id === user.id))
-                                        .map(user => (
-                                        <option key={user.id} value={user.id}>
-                                            {user.name} ({user.email}) - {user.role === 'placement_coordinator' ? 'PC' : 'Marker'}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="mt-2 space-x-1">
-                                {selectedUsers.map((user) => (
-                                    <Badge key={user.id} variant="secondary" className="relative pr-6">
-                                        {user.name} ({user.role === 'placement_coordinator' ? 'PC' : 'Marker'})
-                                        <button type="button" onClick={() => handleRemoveUser(user.id)} className="absolute top-1/2 right-1 -translate-y-1/2 ml-1 text-gray-500 hover:text-red-500">
-                                            <XIcon className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                ))}
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">Select users who can mark attendance for this activity. Admins and activity creators always have access.</p>
-                        </div>
-
-                        {/* Row 6: SPOC Details */}
+                        {/* Row 5: SPOC Details */}
                         <div>
                             <label className="text-sm font-medium">Student Point of Contact</label>
                             <div className="grid sm:grid-cols-2 gap-4 mt-1">

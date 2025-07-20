@@ -1,21 +1,16 @@
 // app/page.js
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import Script from 'next/script';
 import { initialCompanies } from '../lib/data';
-import { QrCodeIcon, UsersIcon, ActivityIcon, LogOutIcon } from '../components/icons';
-import { useAuth } from '../contexts/AuthContext';
-import { logActivity, ACTIVITY_TYPES } from '../utils/activityLogger';
+import { QrCodeIcon } from '../components/icons';
 import Dashboard from '../components/dashboard';
 import BarcodeScannerPage from '../components/scanner';
 import AttendanceView from '../components/attendance-view';
 import ColumnMappingModal from '../components/ColMapModal';
 import AddActivityModal from '../components/AddActivityModal';
 import EditActivityModal from '../components/EditActivityModal';
-import LoginForm from '../components/LoginForm';
-import UserManagement from '../components/UserManagement';
-import ActivityLogs from '../components/ActivityLogs';
 
 // UI Component Primitives
 const Card = ({ children, className = '' }) => (<div className={`bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm ${className}`}>{children}</div>);
@@ -24,19 +19,14 @@ const CardTitle = ({ children, className = '' }) => (<h3 className={`text-2xl fo
 const CardDescription = ({ children, className = '' }) => (<p className={`text-sm text-gray-500 dark:text-gray-400 ${className}`}>{children}</p>);
 const CardContent = ({ children, className = '' }) => (<div className={`p-6 pt-0 ${className}`}>{children}</div>);
 const CardFooter = ({ children, className = '' }) => (<div className={`flex items-center p-6 pt-0 ${className}`}>{children}</div>);
-const Button = ({ children, onClick, className = '', variant = 'default', as: Component = 'button', disabled, size, title, type }) => {
+const Button = ({ children, onClick, className = '', variant = 'default', as: Component = 'button', disabled, size, title }) => {
     const baseClasses = "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:ring-offset-gray-950";
     const variantClasses = {
         default: "bg-gray-900 text-white hover:bg-gray-900/90 dark:bg-gray-50 dark:text-gray-900 dark:hover:bg-gray-50/90",
         outline: "border border-gray-200 bg-transparent hover:bg-gray-100 hover:text-gray-900 dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-50",
     };
-    const sizeClasses = {
-        'icon': 'h-10 w-10',
-        'sm': 'h-8 px-3 py-1',
-        'default': 'h-10 px-4 py-2'
-    };
-    const finalSizeClasses = sizeClasses[size] || sizeClasses['default'];
-    return (<Component onClick={onClick} disabled={disabled} title={title} type={type} className={`${baseClasses} ${variantClasses[variant]} ${finalSizeClasses} ${className}`}>{children}</Component>);
+    const sizeClasses = size === 'icon' ? 'h-10 w-10' : 'h-10 px-4 py-2';
+    return (<Component onClick={onClick} disabled={disabled} title={title} className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses} ${className}`}>{children}</Component>);
 };
 const Table = ({ children, className = '' }) => (<div className="relative w-full overflow-auto"><table className={`w-full caption-bottom text-sm ${className}`}>{children}</table></div>);
 const TableHeader = ({ children, className = '' }) => (<thead className={`[&_tr]:border-b ${className}`}>{children}</thead>);
@@ -56,7 +46,6 @@ const Badge = ({ children, className = '', variant = 'default' }) => {
 const uiComponents = { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Button, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge };
 
 export default function Home() {
-    const { user, userProfile, logout, loading } = useAuth();
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [selectedActivity, setSelectedActivity] = useState(null);
     const [activities, setActivities] = useState([]);
@@ -67,34 +56,7 @@ export default function Home() {
     const [isAddActivityModalOpen, setAddActivityModalOpen] = useState(false);
     const [editActivityModal, setEditActivityModal] = useState({ isOpen: false, activity: null });
 
-    // Reset to dashboard when user logs in
-    useEffect(() => {
-        if (user && userProfile && !loading) {
-            setCurrentPage('dashboard');
-        }
-    }, [user, userProfile, loading]);
-
-    // All hooks must be called before any return or conditional logic
-    const hasPermission = (requiredRole) => {
-        if (userProfile?.role === 'admin') return true;
-        if (requiredRole === 'placement_coordinator') {
-            return userProfile?.role === 'placement_coordinator';
-        }
-        return true;
-    };
-
-    const canMarkAttendance = (activity) => {
-        if (userProfile?.role === 'admin') return true;
-        if (activity.createdBy === userProfile?.id) return true;
-        return activity.allowedUsers?.some(u => u.id === userProfile?.id);
-    };
-
     const handleSelectActivity = (activity) => {
-        // Check permissions before allowing access
-        if (!canMarkAttendance(activity) && activity.status !== 'Inactive') {
-            alert('You do not have permission to mark attendance for this activity.');
-            return;
-        }
         setSelectedActivity(activity);
         if (activity.status === 'Inactive') {
             setCurrentPage("view");
@@ -104,12 +66,6 @@ export default function Home() {
     };
 
     const handleEditActivity = (activity) => {
-        // Only admins and placement coordinators can edit, and only their own activities
-        if (userProfile?.role !== 'admin' && 
-            (userProfile?.role !== 'placement_coordinator' || activity.createdBy !== userProfile?.id)) {
-            alert('You do not have permission to edit this activity.');
-            return;
-        }
         setEditActivityModal({ isOpen: true, activity });
     };
 
@@ -119,6 +75,7 @@ export default function Home() {
             alert('Please enter a company name and select a date.');
             return;
         }
+        
         if (uploadedFile) {
             // Process the uploaded file for student data update
             const reader = new FileReader();
@@ -130,6 +87,7 @@ export default function Home() {
                     const worksheet = workbook.Sheets[sheetName];
                     const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                     const headers = json[0] || [];
+                    
                     setColMapModalData({ 
                         isOpen: true, 
                         activityId: updatedActivity.id, 
@@ -158,53 +116,20 @@ export default function Home() {
     const handleMarkAttendance = useCallback((activityId, studentId) => {
         const activity = activities.find(a => a.id === activityId);
         if (!activity?.students.some(s => s.id === studentId)) return;
-        // Check if user has permission to mark attendance
-        if (!canMarkAttendance(activity)) {
-            alert('You do not have permission to mark attendance for this activity.');
-            return;
-        }
         setAttendance(prev => {
             const activityAttendance = prev[activityId] || [];
             if (activityAttendance.some(att => att.studentId === studentId)) return prev;
-            // Log the attendance marking
-            const student = activity.students.find(s => s.id === studentId);
-            logActivity(
-                userProfile?.id,
-                userProfile?.name,
-                userProfile?.email,
-                ACTIVITY_TYPES.MARK_ATTENDANCE,
-                `Marked attendance for ${student?.name || studentId} in ${activity.companyName} - ${activity.activityType}`
-            );
-            return { 
-                ...prev, 
-                [activityId]: [...activityAttendance, { 
-                    studentId, 
-                    timestamp: new Date().toISOString(),
-                    markedBy: userProfile?.id,
-                    markedByName: userProfile?.name
-                }] 
-            };
+            return { ...prev, [activityId]: [...activityAttendance, { studentId, timestamp: new Date().toISOString() }] };
         });
-    }, [activities, userProfile, canMarkAttendance]);
+    }, [activities]);
 
     const handleAddActivity = (newActivity, uploadedFile) => {
-        // Only admins and placement coordinators can create activities
-        if (!hasPermission('placement_coordinator')) {
-            alert('You do not have permission to create activities.');
-            return;
-        }
         // First, validate that all required fields are filled
         if (!newActivity.companyName.trim() || !newActivity.date) {
             alert('Please enter a company name and select a date.');
             return;
         }
-        // Add creator information
-        const activityWithCreator = {
-            ...newActivity,
-            createdBy: userProfile?.id,
-            createdByName: userProfile?.name,
-            createdAt: new Date().toISOString()
-        };
+        
         if (uploadedFile) {
             // Process the uploaded file for student data
             const reader = new FileReader();
@@ -216,12 +141,13 @@ export default function Home() {
                     const worksheet = workbook.Sheets[sheetName];
                     const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                     const headers = json[0] || [];
+                    
                     setColMapModalData({ 
                         isOpen: true, 
-                        activityId: activityWithCreator.id, 
+                        activityId: newActivity.id, 
                         file: uploadedFile, 
                         headers: headers,
-                        newActivity: activityWithCreator
+                        newActivity: newActivity
                     });
                 } catch (error) {
                     console.error("Error reading Excel file:", error);
@@ -231,15 +157,7 @@ export default function Home() {
             reader.readAsArrayBuffer(uploadedFile);
         } else {
             // Add activity without student data
-            setActivities(prev => [...prev, activityWithCreator].sort((a, b) => new Date(a.date) - new Date(b.date)));
-            // Log the activity creation
-            logActivity(
-                userProfile?.id,
-                userProfile?.name,
-                userProfile?.email,
-                ACTIVITY_TYPES.CREATE_ACTIVITY,
-                `Created activity: ${activityWithCreator.companyName} - ${activityWithCreator.activityType}`
-            );
+            setActivities(prev => [...prev, newActivity].sort((a, b) => new Date(a.date) - new Date(b.date)));
         }
     };
 
@@ -281,6 +199,7 @@ export default function Home() {
                     roll: String(row[mapping.roll] || ''),
                     department: String(row[mapping.department] || ''),
                 }));
+
                 if (newActivity) {
                     // This is a new activity being created with file upload
                     const activityWithStudents = { ...newActivity, students: newStudents };
@@ -293,6 +212,7 @@ export default function Home() {
                     // This is updating an existing activity (legacy flow)
                     setActivities(prev => prev.map(a => a.id === activityId ? { ...a, students: newStudents } : a));
                 }
+                
                 alert(`Successfully uploaded ${newStudents.length} students.`);
                 handleColMapModalClose();
             } catch (error) {
@@ -308,48 +228,12 @@ export default function Home() {
     const ColumnMappingModalWithUI = (props) => <ColumnMappingModal {...props} {...uiComponents} />;
     const AddActivityModalWithUI = (props) => <AddActivityModal {...props} {...uiComponents} />;
     const EditActivityModalWithUI = (props) => <EditActivityModal {...props} {...uiComponents} />;
-    const UserManagementWithUI = (props) => <UserManagement {...props} {...uiComponents} />;
-    const ActivityLogsWithUI = (props) => <ActivityLogs {...props} {...uiComponents} />;
-
-    const handleLogout = async () => {
-        try {
-            await logActivity(
-                userProfile?.id,
-                userProfile?.name,
-                userProfile?.email,
-                ACTIVITY_TYPES.LOGOUT,
-                'User logged out'
-            );
-            // Reset page state before logout
-            setCurrentPage('dashboard');
-            setSelectedActivity(null);
-            await logout();
-        } catch (error) {
-            console.error('Logout error:', error);
-        }
-    };
-
-    // Show loading screen while authentication is loading
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black">
-                <div className="text-center">
-                    <QrCodeIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Show login form if user is not authenticated
-    if (!user || !userProfile) {
-        return <LoginForm {...uiComponents} />;
-    }
 
     return (
         <>
             <Script src="https://unpkg.com/html5-qrcode" strategy="afterInteractive" onLoad={() => setIsScannerScriptLoaded(true)} />
             <Script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js" strategy="afterInteractive" onLoad={() => setIsXlsxScriptLoaded(true)} />
+
             <ColumnMappingModalWithUI isOpen={colMapModalData.isOpen} onClose={handleColMapModalClose} headers={colMapModalData.headers} onSubmit={handleColumnMappingSubmit} />
             <AddActivityModalWithUI 
                 isOpen={isAddActivityModalOpen} 
@@ -365,6 +249,7 @@ export default function Home() {
                 onFileUpload={handleFileUpload}
                 activity={editActivityModal.activity}
             />
+
             <div className="bg-gray-50 dark:bg-black min-h-screen text-gray-800 dark:text-gray-200 font-sans">
                 <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                     <nav className="container mx-auto px-4 lg:px-6 h-16 flex items-center justify-between">
@@ -372,74 +257,18 @@ export default function Home() {
                             <QrCodeIcon className="h-6 w-6 text-gray-900 dark:text-white" />
                             <h1 className="text-xl font-bold text-gray-900 dark:text-white">Placement Portal</h1>
                         </div>
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                                <Button 
-                                    variant={currentPage === 'dashboard' ? 'default' : 'outline'}
-                                    onClick={() => {
-                                        setCurrentPage('dashboard');
-                                        setSelectedActivity(null);
-                                    }}
-                                    size="sm"
-                                >
-                                    Dashboard
-                                </Button>
-                                {userProfile?.role === 'admin' && (
-                                    <>
-                                        <Button 
-                                            variant={currentPage === 'users' ? 'default' : 'outline'}
-                                            onClick={() => {
-                                                setCurrentPage('users');
-                                                setSelectedActivity(null);
-                                            }}
-                                            size="sm"
-                                        >
-                                            <UsersIcon className="h-4 w-4 mr-2" />
-                                            Users
-                                        </Button>
-                                        <Button 
-                                            variant={currentPage === 'logs' ? 'default' : 'outline'}
-                                            onClick={() => {
-                                                setCurrentPage('logs');
-                                                setSelectedActivity(null);
-                                            }}
-                                            size="sm"
-                                        >
-                                            <ActivityIcon className="h-4 w-4 mr-2" />
-                                            Logs
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2 border-l pl-4">
-                                <div className="text-sm">
-                                    <div className="font-medium">{userProfile?.name}</div>
-                                    <div className="text-gray-500 capitalize">{userProfile?.role?.replace('_', ' ')}</div>
-                                </div>
-                                <Button variant="outline" size="sm" onClick={handleLogout}>
-                                    <LogOutIcon className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
                     </nav>
                 </header>
+
                 <main className="container mx-auto p-4 sm:p-6 lg:p-8">
                     {currentPage === 'dashboard' && (
                         <DashboardWithUI
                             activities={activities}
                             attendance={attendance}
                             onSelectActivity={handleSelectActivity}
-                            onAddActivityClick={() => hasPermission('placement_coordinator') ? setAddActivityModalOpen(true) : alert('Access denied')}
+                            onAddActivityClick={() => setAddActivityModalOpen(true)}
                             onEditActivity={handleEditActivity}
-                            userRole={userProfile?.role}
-                            userId={userProfile?.id}
                         />
-                    )}
-                    {currentPage === 'users' && userProfile?.role === 'admin' && (
-                        <UserManagementWithUI />
-                    )}
-                    {currentPage === 'logs' && userProfile?.role === 'admin' && (
-                        <ActivityLogsWithUI />
                     )}
                     {currentPage === 'scanner' && selectedActivity && (
                         <BarcodeScannerPageWithUI
