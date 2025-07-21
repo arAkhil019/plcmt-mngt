@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { logActivity, ACTIVITY_TYPES } from '../utils/activityLogger';
 import { activitiesService } from '../lib/activitiesService';
 import { activityLogsService, ACTIVITY_LOG_TYPES } from '../lib/activityLogsService';
+import { activityParticipationService } from '../lib/activityParticipationService';
 import Dashboard from '../components/dashboard';
 import BarcodeScannerPage from '../components/scanner';
 import AttendanceView from '../components/attendance-view';
@@ -77,14 +78,97 @@ export default function Home() {
         }
     }, [user, userProfile, loading]);
 
+    // Utility function to normalize activity structure from different sources
+    const normalizeActivity = (activity, source = 'old') => {
+        if (source === 'new') {
+            // Activity from activityParticipationService.getAllActivitiesWithParticipants()
+            return {
+                id: activity.id,
+                activityId: activity.activityId,
+                companyName: activity.name,
+                name: activity.name,
+                activityType: 'Pre-placement Talk', // Default for new system
+                interviewRound: 1,
+                date: activity.date,
+                time: '',
+                mode: 'Offline',
+                location: '',
+                status: activity.isActive ? 'Active' : 'Inactive',
+                eligibleDepartments: [],
+                spocName: '',
+                spocContact: '',
+                allowedUsers: [],
+                students: activity.participants?.map(p => ({
+                    id: p.admissionNumber,
+                    name: p.name,
+                    rollNumber: p.rollNumber,
+                    admissionNumber: p.admissionNumber,
+                    department: p.department,
+                    attendance: p.attendance || false
+                })) || [],
+                totalRegistered: activity.totalParticipants || 0,
+                totalPresent: activity.participants?.filter(p => p.attendance).length || 0,
+                createdBy: activity.createdBy,
+                createdAt: activity.createdAt,
+                lastUpdated: activity.lastUpdated,
+                participants: activity.participants || []
+            };
+        } else {
+            // Activity from activitiesService.getAllActivities() (old system)
+            return {
+                ...activity,
+                participants: [], // Old system doesn't have participants in this format
+                totalRegistered: activity.students?.length || 0,
+                totalPresent: activity.students?.filter(s => s.attendance).length || 0
+            };
+        }
+    };
+
     // Load activities from Firebase when user is authenticated
     useEffect(() => {
         const loadActivities = async () => {
             if (user && userProfile && !loading) {
                 try {
-                    // All authenticated users can see all activities
-                    const activitiesData = await activitiesService.getAllActivities();
-                    setActivities(activitiesData);
+                    // Load activities from both the new and old systems to avoid missing any
+                    const [oldActivities, newActivities] = await Promise.all([
+                        activitiesService.getAllActivities().catch(err => {
+                            console.error('Error loading old activities:', err);
+                            return [];
+                        }),
+                        activityParticipationService.getAllActivitiesWithParticipants().catch(err => {
+                            console.error('Error loading new activities:', err);
+                            return [];
+                        })
+                    ]);
+
+                    // Normalize activities from both sources
+                    const normalizedOldActivities = oldActivities.map(activity => normalizeActivity(activity, 'old'));
+                    const normalizedNewActivities = newActivities.map(activity => normalizeActivity(activity, 'new'));
+
+                    // Merge and deduplicate activities based on ID
+                    const allActivities = [...normalizedOldActivities, ...normalizedNewActivities];
+                    const uniqueActivities = allActivities.reduce((acc, current) => {
+                        // Use custom activityId if available, otherwise use document id
+                        const key = current.activityId || current.id;
+                        const existing = acc.find(activity => 
+                            (activity.activityId || activity.id) === key
+                        );
+                        
+                        if (!existing) {
+                            acc.push(current);
+                        } else {
+                            // If duplicate found, prefer the one with participants (new system)
+                            if (current.participants && current.participants.length > 0) {
+                                const index = acc.findIndex(activity => 
+                                    (activity.activityId || activity.id) === key
+                                );
+                                acc[index] = current;
+                            }
+                        }
+                        return acc;
+                    }, []);
+
+                    setActivities(uniqueActivities);
                 } catch (error) {
                     console.error('Error loading activities:', error);
                     // Keep empty activities array on error
@@ -197,6 +281,42 @@ export default function Home() {
         }
     };
 
+    const handleDeleteActivity = async (activity) => {
+        if (!userProfile) return;
+
+        try {
+            // Delete the activity using activityParticipationService
+            const result = await activityParticipationService.deleteActivity(
+                activity.id, 
+                activity.id, 
+                userProfile
+            );
+            
+            // Remove from local state
+            setActivities(prev => prev.filter(a => a.id !== activity.id));
+            
+            // Log the activity deletion
+            await activityLogsService.logActivity(
+                userProfile?.id,
+                userProfile?.name,
+                userProfile?.email,
+                ACTIVITY_LOG_TYPES.DELETE_ACTIVITY,
+                `Deleted activity: ${activity.companyName || activity.name} - ${activity.activityType || 'Activity'}`,
+                {
+                    activityId: activity.id,
+                    companyName: activity.companyName || activity.name,
+                    activityType: activity.activityType || 'Activity',
+                    deletedParticipationRecords: result.deletedParticipationRecords
+                }
+            );
+            
+            alert(`Activity "${activity.companyName || activity.name}" deleted successfully. ${result.deletedParticipationRecords} participation records were also removed.`);
+        } catch (error) {
+            console.error('Error deleting activity:', error);
+            alert(`Failed to delete activity: ${error.message}`);
+        }
+    };
+
     const handleBackToDashboard = () => {
         setCurrentPage("dashboard");
         setSelectedActivity(null);
@@ -281,7 +401,7 @@ export default function Home() {
 
         try {
             if (uploadedFile) {
-                // Process the uploaded file for student data
+                // Process the uploaded file for student data using the new unified system
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     try {
@@ -292,7 +412,7 @@ export default function Home() {
                         const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                         const headers = json[0] || [];
                         
-                        // Clean the activity data before sending to Firebase
+                        // Clean the activity data before processing
                         const cleanActivityData = {
                             companyName: newActivity.companyName.trim(),
                             activityType: newActivity.activityType,
@@ -308,19 +428,15 @@ export default function Home() {
                             allowedUsers: newActivity.allowedUsers || []
                         };
                         
-                        // Create activity first in Firebase
-                        console.log('Creating activity with clean data:', cleanActivityData);
-                        const createdActivity = await activitiesService.createActivity(
-                            cleanActivityData,
-                            { id: userProfile?.id, name: userProfile?.name }
-                        );
+                        // Generate a temporary activity ID for the column mapping process
+                        const tempActivityId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                         
                         setColMapModalData({ 
                             isOpen: true, 
-                            activityId: createdActivity.id, 
+                            activityId: tempActivityId, 
                             file: uploadedFile, 
                             headers: headers,
-                            newActivity: createdActivity
+                            newActivity: cleanActivityData
                         });
                     } catch (error) {
                         console.error("Error reading Excel file or creating activity:", error);
@@ -329,7 +445,7 @@ export default function Home() {
                 };
                 reader.readAsArrayBuffer(uploadedFile);
             } else {
-                // Clean the activity data before sending to Firebase
+                // For activities without files, create directly using the old system
                 const cleanActivityData = {
                     companyName: newActivity.companyName.trim(),
                     activityType: newActivity.activityType,
@@ -345,8 +461,7 @@ export default function Home() {
                     allowedUsers: newActivity.allowedUsers || []
                 };
                 
-                // Create activity without student data
-                console.log('Creating activity without file:', cleanActivityData);
+                // Create activity without student data using the old system
                 const createdActivity = await activitiesService.createActivity(
                     cleanActivityData,
                     { id: userProfile?.id, name: userProfile?.name }
@@ -406,59 +521,170 @@ export default function Home() {
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const json = window.XLSX.utils.sheet_to_json(worksheet);
-                const newStudents = json.map((row, index) => {
+                
+                // Extract participants with name and roll number
+                const participants = json.map((row, index) => {
                     // Skip empty rows
                     if (!row || Object.keys(row).length === 0) return null;
                     
-                    const studentId = String(row[mapping.id] || `MISSING_ID_${index}`).trim();
-                    const studentName = String(row[mapping.name] || 'N/A').trim();
-                    const rollNumber = mapping.roll ? String(row[mapping.roll] || '').trim() : '';
-                    const department = mapping.department ? String(row[mapping.department] || '').trim() : '';
+                    const studentName = String(row[mapping.name] || '').trim();
+                    const rollNumber = String(row[mapping.rollNumber] || '').trim();
                     
                     // Skip rows with empty essential data
-                    if (!studentId || studentId === `MISSING_ID_${index}` || !studentName || studentName === 'N/A') {
+                    if (!studentName || !rollNumber) {
                         return null;
                     }
                     
                     return {
-                        id: studentId,
                         name: studentName,
-                        roll: rollNumber,
-                        department: department,
-                        attendance: false // Initialize attendance as false
+                        rollNumber: rollNumber,
+                        sheetName: sheetName
                     };
-                }).filter(student => student !== null); // Remove null entries
+                }).filter(participant => participant !== null); // Remove null entries
 
-                if (newActivity) {
-                    // This is a new activity being created with file upload
-                    const updatedActivity = await activitiesService.addStudentsToActivity(
-                        activityId,
-                        newStudents,
-                        { id: userProfile?.id, name: userProfile?.name }
-                    );
-                    setActivities(prev => [...prev, updatedActivity].sort((a, b) => new Date(a.date) - new Date(b.date)));
-                } else if (updatedActivity) {
-                    // This is updating an existing activity via edit modal
-                    const updated = await activitiesService.addStudentsToActivity(
-                        activityId,
-                        newStudents,
-                        { id: userProfile?.id, name: userProfile?.name }
-                    );
-                    setActivities(prev => prev.map(a => a.id === activityId ? updated : a));
-                } else {
-                    // This is updating an existing activity (legacy flow)
-                    const updated = await activitiesService.addStudentsToActivity(
-                        activityId,
-                        newStudents,
-                        { id: userProfile?.id, name: userProfile?.name }
-                    );
-                    setActivities(prev => prev.map(a => a.id === activityId ? updated : a));
+                if (participants.length === 0) {
+                    alert("No valid participants found in the Excel file. Please ensure you have Name and Roll Number columns with data.");
+                    return;
                 }
-                alert(`Successfully uploaded ${newStudents.length} students.`);
+
+                // Process participants using activity participation service to find admission numbers
+                const activityDetails = {
+                    id: newActivity ? `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : activityId,
+                    name: (newActivity?.companyName || updatedActivity?.companyName || `Activity_${activityId}`),
+                    date: (newActivity?.date || updatedActivity?.date || new Date().toISOString().split('T')[0])
+                };
+
+                // Show processing message
+                const processingMessage = `Processing ${participants.length} participants...\nThis may take a few minutes for large files.\nPlease do not close this window.`;
+                
+                // Create a simple progress dialog (you could enhance this with a proper modal)
+                const progressAlert = () => {
+                    console.log(processingMessage);
+                    // You could replace this with a proper loading modal in the future
+                };
+                
+                progressAlert();
+
+                const processingResults = await activityParticipationService.processActivityParticipation(
+                    participants,
+                    activityDetails,
+                    userProfile
+                );
+
+                if (processingResults.summary.successful > 0) {
+                    // Transform successful results to include all required participant details
+                    const participantsList = processingResults.successful.map((result) => ({
+                        name: result.providedName,
+                        rollNumber: result.rollNumber,
+                        admissionNumber: result.admissionNumber,
+                        department: result.department,
+                        departmentCode: result.departmentCode,
+                        year: result.year || result.joiningYear || new Date().getFullYear(),
+                        addedAt: new Date().toISOString(),
+                        addedBy: userProfile.name,
+                        addedById: userProfile.id,
+                        attendance: false // Initialize attendance as false
+                    }));
+
+                    // Save activity with participant details using activity participation service
+                    const savedActivity = await activityParticipationService.saveActivityWithParticipants(
+                        activityDetails,
+                        participantsList,
+                        userProfile
+                    );
+
+                    // Update activities list
+                    if (newActivity) {
+                        // Normalize the saved activity from the new system
+                        const normalizedActivity = normalizeActivity(savedActivity, 'new');
+                        
+                        // Add the new activity to the list
+                        setActivities(prev => [...prev, normalizedActivity].sort((a, b) => new Date(a.date) - new Date(b.date)));
+                        
+                        // Log the activity creation
+                        await activityLogsService.logActivity(
+                            userProfile?.id,
+                            userProfile?.name,
+                            userProfile?.email,
+                            ACTIVITY_LOG_TYPES.CREATE_ACTIVITY,
+                            `Created activity: ${savedActivity.name} with ${participantsList.length} participants`,
+                            { 
+                                activityId: savedActivity.id,
+                                companyName: savedActivity.name,
+                                participantsCount: participantsList.length
+                            }
+                        );
+                    } else {
+                        // Normalize the updated activity
+                        const normalizedActivity = normalizeActivity(savedActivity, 'new');
+                        // Update existing activity
+                        setActivities(prev => prev.map(a => a.id === activityId ? normalizedActivity : a));
+                    }
+
+                    // Create detailed success/failure message
+                    let message = `Processing Complete!\n\n`;
+                    message += `✅ Successfully processed: ${processingResults.summary.successful} participants\n`;
+                    
+                    if (processingResults.summary.failed > 0) {
+                        message += `❌ Failed to process: ${processingResults.summary.failed} participants\n\n`;
+                        message += `Failed participants:\n`;
+                        
+                        // Group failures by error type
+                        const failuresByError = processingResults.failed.reduce((acc, failure) => {
+                            const error = failure.error || 'Unknown error';
+                            if (!acc[error]) acc[error] = [];
+                            acc[error].push(`${failure.name} (${failure.rollNumber})`);
+                            return acc;
+                        }, {});
+                        
+                        Object.entries(failuresByError).forEach(([error, students]) => {
+                            message += `\n${error}:\n`;
+                            students.slice(0, 10).forEach(student => {
+                                message += `  • ${student}\n`;
+                            });
+                            if (students.length > 10) {
+                                message += `  ... and ${students.length - 10} more\n`;
+                            }
+                        });
+                        
+                        message += `\nPlease check the console for detailed error logs.`;
+                    }
+                    
+                    alert(message);
+                } else {
+                    // No successful participants
+                    let message = `❌ No participants could be processed successfully.\n\n`;
+                    message += `Total attempted: ${processingResults.summary.totalProcessed}\n`;
+                    message += `Failed: ${processingResults.summary.failed}\n\n`;
+                    
+                    if (processingResults.failed.length > 0) {
+                        message += `Common issues:\n`;
+                        
+                        // Group failures by error type
+                        const failuresByError = processingResults.failed.reduce((acc, failure) => {
+                            const error = failure.error || 'Unknown error';
+                            acc[error] = (acc[error] || 0) + 1;
+                            return acc;
+                        }, {});
+                        
+                        Object.entries(failuresByError).forEach(([error, count]) => {
+                            message += `• ${error}: ${count} students\n`;
+                        });
+                        
+                        message += `\nPlease check:\n`;
+                        message += `• Roll numbers are in correct format (1601YYXXXNNN)\n`;
+                        message += `• Students exist in the database\n`;
+                        message += `• Names and roll numbers are not empty\n`;
+                        message += `\nCheck the console for detailed error logs.`;
+                    }
+                    
+                    alert(message);
+                }
+
                 handleColMapModalClose();
             } catch (error) {
-                console.error('Error uploading students:', error);
-                alert("Failed to parse the Excel file with mapping or update the database.");
+                console.error('Error processing participants:', error);
+                alert("Failed to process the Excel file or update the database.");
             }
         };
         reader.readAsArrayBuffer(file);
@@ -525,6 +751,7 @@ export default function Home() {
                 isOpen={editActivityModal.isOpen} 
                 onClose={() => setEditActivityModal({ isOpen: false, activity: null })} 
                 onSubmit={handleUpdateActivity}
+                onDelete={handleDeleteActivity}
                 onFileUpload={handleFileUpload}
                 activity={editActivityModal.activity}
             />

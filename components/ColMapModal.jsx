@@ -18,10 +18,8 @@ export default function ColumnMappingModal({
 }) {
   // State to hold the current mapping selections
   const [mapping, setMapping] = useState({
-    id: "",
     name: "",
-    roll: "",
-    department: "",
+    rollNumber: "",
   });
 
   if (!isOpen) return null;
@@ -33,11 +31,11 @@ export default function ColumnMappingModal({
   const handleConfirm = () => {
     // Validate required fields
     const missingFields = [];
-    if (!mapping.id || mapping.id === "") {
-      missingFields.push("Student ID");
-    }
     if (!mapping.name || mapping.name === "") {
       missingFields.push("Student Name");
+    }
+    if (!mapping.rollNumber || mapping.rollNumber === "") {
+      missingFields.push("Roll Number");
     }
 
     if (missingFields.length > 0) {
@@ -57,10 +55,8 @@ export default function ColumnMappingModal({
   };
 
   const requiredFields = [
-    { key: "id", label: "Student ID (Required)" },
     { key: "name", label: "Student Name (Required)" },
-    { key: "roll", label: "Roll Number (Optional)" },
-    { key: "department", label: "Department (Optional)" },
+    { key: "rollNumber", label: "Roll Number (Required)" },
   ];
 
   return (
@@ -69,8 +65,8 @@ export default function ColumnMappingModal({
         <CardHeader>
           <CardTitle>Map Excel Columns</CardTitle>
           <CardDescription>
-            Match the columns from your Excel file to the required student data
-            fields.
+            Match the columns from your Excel file to the required student data fields.
+            The system will automatically find admission numbers using roll numbers.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

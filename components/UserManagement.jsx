@@ -91,66 +91,100 @@ export default function UserManagement({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-gray-500">Manage users and their roles</p>
+    <div className="max-w-7xl mx-auto space-y-8 p-6">
+      {/* Header Section */}
+      <div className="flex justify-between items-start">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+            User Management
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">
+            Manage users and their roles in the system
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowCreateAdmin(true)} variant="outline">+ Create Admin</Button>
-          <Button onClick={() => setShowCreateUser(true)}>+ Create User</Button>
+        <div className="flex gap-3">
+          <Button 
+            onClick={() => setShowCreateAdmin(true)} 
+            variant="outline"
+            className="px-6 py-2.5"
+          >
+            <span className="mr-2">+</span>
+            Create Admin
+          </Button>
+          <Button 
+            onClick={() => setShowCreateUser(true)}
+            className="px-6 py-2.5"
+          >
+            <span className="mr-2">+</span>
+            Create User
+          </Button>
         </div>
       </div>
 
+      {/* Create User Form */}
       {showCreateUser && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create New User</CardTitle>
-            <CardDescription>Add a new user to the system</CardDescription>
+        <Card className="shadow-lg border-gray-200 dark:border-gray-700">
+          <CardHeader className="pb-6">
+            <CardTitle className="text-2xl text-gray-900 dark:text-white">
+              Create New User
+            </CardTitle>
+            <CardDescription className="text-base text-gray-600 dark:text-gray-400">
+              Add a new user to the system with specific role permissions
+            </CardDescription>
           </CardHeader>
           <form onSubmit={handleCreateUser}>
-            <CardContent className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Name</label>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Full Name
+                  </label>
                   <input
                     type="text"
                     value={newUser.name}
                     onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
                     required
-                    className="w-full h-10 px-3 rounded-md border"
+                    className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="Enter full name"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Email</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Email Address
+                  </label>
                   <input
                     type="email"
                     value={newUser.email}
                     onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
                     required
-                    className="w-full h-10 px-3 rounded-md border"
+                    className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="Enter email address"
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Password</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Password
+                  </label>
                   <input
                     type="password"
                     value={newUser.password}
                     onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
                     required
                     minLength={6}
-                    className="w-full h-10 px-3 rounded-md border"
+                    className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="Minimum 6 characters"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Role</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    User Role
+                  </label>
                   <select
                     value={newUser.role}
                     onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
-                    className="w-full h-10 px-3 rounded-md border"
+                    className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   >
                     <option value="placement_coordinator">Placement Coordinator</option>
                     <option value="attendance_marker">Attendance Marker</option>
@@ -159,24 +193,39 @@ export default function UserManagement({
                 </div>
               </div>
             </CardContent>
-            <div className="flex justify-end gap-2 p-6 pt-0">
-              <Button type="button" variant="outline" onClick={() => setShowCreateUser(false)}>Cancel</Button>
-              <Button type="submit">Create User</Button>
+            <div className="flex justify-end gap-3 px-6 pb-6">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setShowCreateUser(false)}
+                className="px-6 py-2.5"
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                className="px-6 py-2.5"
+              >
+                Create User
+              </Button>
             </div>
           </form>
         </Card>
       )}
 
+      {/* Create Admin Modal */}
       {showCreateAdmin && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto shadow-xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Create Admin User</h3>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Create Admin User
+              </h3>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={() => setShowCreateAdmin(false)}
-                className="h-8 w-8 p-0"
+                className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 ×
               </Button>
@@ -195,53 +244,87 @@ export default function UserManagement({
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Users</CardTitle>
-          <CardDescription>All users in the system</CardDescription>
+      {/* Users Table */}
+      <Card className="shadow-lg border-gray-200 dark:border-gray-700">
+        <CardHeader className="pb-6">
+          <CardTitle className="text-2xl text-gray-900 dark:text-white">
+            System Users
+          </CardTitle>
+          <CardDescription className="text-base text-gray-600 dark:text-gray-400">
+            Overview of all users and their access levels
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           {loading ? (
-            <p className="text-center py-4">Loading users...</p>
+            <div className="text-center py-12">
+              <div className="inline-flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span className="text-gray-600 dark:text-gray-400">Loading users...</span>
+              </div>
+            </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Login</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{getRoleBadge(user.role)}</TableCell>
-                    <TableCell>
-                      <Badge variant={user.isActive ? 'success' : 'secondary'}>
-                        {user.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {user.lastLogin ? new Date(user.lastLogin.seconds * 1000).toLocaleDateString() : 'Never'}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleToggleUserStatus(user.id, user.isActive)}
-                      >
-                        {user.isActive ? 'Deactivate' : 'Activate'}
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-gray-200 dark:border-gray-700">
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Name
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Email
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Role
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Status
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Last Login
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700 dark:text-gray-300 py-4 px-6">
+                      Actions
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.id} className="border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <TableCell className="font-medium text-gray-900 dark:text-white py-4 px-6">
+                        {user.name}
+                      </TableCell>
+                      <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
+                        {user.email}
+                      </TableCell>
+                      <TableCell className="py-4 px-6">
+                        {getRoleBadge(user.role)}
+                      </TableCell>
+                      <TableCell className="py-4 px-6">
+                        <Badge 
+                          variant={user.isActive ? 'success' : 'secondary'}
+                          className="font-medium"
+                        >
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
+                        {user.lastLogin ? new Date(user.lastLogin.seconds * 1000).toLocaleDateString() : 'Never'}
+                      </TableCell>
+                      <TableCell className="py-4 px-6">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleUserStatus(user.id, user.isActive)}
+                          className="px-4 py-2"
+                        >
+                          {user.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

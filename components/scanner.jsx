@@ -153,11 +153,11 @@ export default function BarcodeScannerPage({
               </p>
             )}
           </div>
-          {lastScannedId && (
-            <div className="mt-4 p-3 rounded-md bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-sm font-medium text-center">
-              Successfully marked attendance for {lastScannedId}.
-            </div>
-          )}
+            {lastScannedId && (
+              <div className="mt-4 p-3 rounded-md bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-sm font-medium text-center">
+                Successfully marked attendance for admission number {lastScannedId}.
+              </div>
+            )}
         </CardContent>
       </Card>
 
@@ -176,7 +176,7 @@ export default function BarcodeScannerPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student ID</TableHead>
+                  <TableHead>Admission No.</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Roll No.</TableHead>
                   <TableHead className="text-right">Status</TableHead>
@@ -185,23 +185,23 @@ export default function BarcodeScannerPage({
               <TableBody>
                 {activity.students?.map((student) => {
                   const record = attendance[activity.id]?.find(
-                    (att) => att.studentId === student.id
+                    (att) => att.studentId === student.admissionNumber || att.studentId === student.id
                   );
                   return (
                     <TableRow
-                      key={student.id}
+                      key={student.admissionNumber || student.id}
                       className={
-                        lastScannedId === student.id
+                        lastScannedId === (student.admissionNumber || student.id)
                           ? "bg-green-100/50 dark:bg-green-900/20"
                           : ""
                       }
                     >
                       <TableCell className="font-mono text-xs">
-                        {student.id}
+                        {student.admissionNumber || student.id}
                       </TableCell>
                       <TableCell>{student.name}</TableCell>
                       <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-                        {student.roll || '-'}
+                        {student.rollNumber || student.roll || '-'}
                       </TableCell>
                       <TableCell className="text-right">
                         {record || student.attendance ? (
