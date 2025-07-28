@@ -1,12 +1,32 @@
 // components/UserManagement.jsx
-import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import AdminUserForm from './AdminUserForm';
+import React, { useState, useEffect } from "react";
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+} from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { useAuth } from "../contexts/AuthContext";
+import AdminUserForm from "./AdminUserForm";
 
 export default function UserManagement({
-  Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, Table, TableHeader, TableBody, TableRow, TableHead, TableCell
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Button,
+  Badge,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
 }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,10 +35,10 @@ export default function UserManagement({
   const { createUser, userProfile } = useAuth();
 
   const [newUser, setNewUser] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: 'placement_coordinator'
+    name: "",
+    email: "",
+    password: "",
+    role: "placement_coordinator",
   });
 
   useEffect(() => {
@@ -27,15 +47,18 @@ export default function UserManagement({
 
   const fetchUsers = async () => {
     try {
-      const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
+      const usersQuery = query(
+        collection(db, "users"),
+        orderBy("createdAt", "desc")
+      );
       const snapshot = await getDocs(usersQuery);
-      const usersData = snapshot.docs.map(doc => ({
+      const usersData = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       }));
       setUsers(usersData);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      // Error fetching users - continue with empty list
     } finally {
       setLoading(false);
     }
@@ -46,46 +69,54 @@ export default function UserManagement({
     try {
       await createUser(newUser.email, newUser.password, {
         name: newUser.name,
-        role: newUser.role
+        role: newUser.role,
       });
-      
-      setNewUser({ name: '', email: '', password: '', role: 'placement_coordinator' });
+
+      setNewUser({
+        name: "",
+        email: "",
+        password: "",
+        role: "placement_coordinator",
+      });
       setShowCreateUser(false);
       fetchUsers();
-      alert('User created successfully!');
+      alert("User created successfully!");
     } catch (error) {
-      console.error('Error creating user:', error);
-      alert('Failed to create user: ' + error.message);
+      alert("Failed to create user: " + error.message);
     }
   };
 
   const handleToggleUserStatus = async (userId, currentStatus) => {
     try {
-      await updateDoc(doc(db, 'users', userId), {
-        isActive: !currentStatus
+      await updateDoc(doc(db, "users", userId), {
+        isActive: !currentStatus,
       });
       fetchUsers();
     } catch (error) {
-      console.error('Error updating user status:', error);
-      alert('Failed to update user status');
+      alert("Failed to update user status");
     }
   };
 
   const getRoleBadge = (role) => {
     const roleConfig = {
-      admin: { variant: 'default', label: 'Admin' },
-      placement_coordinator: { variant: 'secondary', label: 'PC' },
-      attendance_marker: { variant: 'success', label: 'Marker' }
+      admin: { variant: "default", label: "Admin" },
+      placement_coordinator: { variant: "secondary", label: "PC" },
+      attendance_marker: { variant: "success", label: "Marker" },
     };
-    
-    const config = roleConfig[role] || { variant: 'secondary', label: 'Unknown' };
+
+    const config = roleConfig[role] || {
+      variant: "secondary",
+      label: "Unknown",
+    };
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  if (userProfile?.role !== 'admin') {
+  if (userProfile?.role !== "admin") {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-500">Access denied. Admin privileges required.</p>
+        <p className="text-gray-500">
+          Access denied. Admin privileges required.
+        </p>
       </div>
     );
   }
@@ -103,15 +134,15 @@ export default function UserManagement({
           </p>
         </div>
         <div className="flex gap-3">
-          <Button 
-            onClick={() => setShowCreateAdmin(true)} 
+          <Button
+            onClick={() => setShowCreateAdmin(true)}
             variant="outline"
             className="px-6 py-2.5"
           >
             <span className="mr-2">+</span>
             Create Admin
           </Button>
-          <Button 
+          <Button
             onClick={() => setShowCreateUser(true)}
             className="px-6 py-2.5"
           >
@@ -142,7 +173,9 @@ export default function UserManagement({
                   <input
                     type="text"
                     value={newUser.name}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({ ...prev, name: e.target.value }))
+                    }
                     required
                     className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Enter full name"
@@ -155,7 +188,9 @@ export default function UserManagement({
                   <input
                     type="email"
                     value={newUser.email}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({ ...prev, email: e.target.value }))
+                    }
                     required
                     className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Enter email address"
@@ -170,7 +205,12 @@ export default function UserManagement({
                   <input
                     type="password"
                     value={newUser.password}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({
+                        ...prev,
+                        password: e.target.value,
+                      }))
+                    }
                     required
                     minLength={6}
                     className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -183,10 +223,14 @@ export default function UserManagement({
                   </label>
                   <select
                     value={newUser.role}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({ ...prev, role: e.target.value }))
+                    }
                     className="w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   >
-                    <option value="placement_coordinator">Placement Coordinator</option>
+                    <option value="placement_coordinator">
+                      Placement Coordinator
+                    </option>
                     <option value="attendance_marker">Attendance Marker</option>
                     <option value="admin">Admin</option>
                   </select>
@@ -194,18 +238,15 @@ export default function UserManagement({
               </div>
             </CardContent>
             <div className="flex justify-end gap-3 px-6 pb-6">
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setShowCreateUser(false)}
                 className="px-6 py-2.5"
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit"
-                className="px-6 py-2.5"
-              >
+              <Button type="submit" className="px-6 py-2.5">
                 Create User
               </Button>
             </div>
@@ -221,9 +262,9 @@ export default function UserManagement({
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Create Admin User
               </h3>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowCreateAdmin(false)}
                 className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
@@ -231,7 +272,7 @@ export default function UserManagement({
               </Button>
             </div>
             <div className="p-6">
-              <AdminUserForm 
+              <AdminUserForm
                 Button={Button}
                 onSuccess={() => {
                   setShowCreateAdmin(false);
@@ -259,7 +300,9 @@ export default function UserManagement({
             <div className="text-center py-12">
               <div className="inline-flex items-center space-x-2">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                <span className="text-gray-600 dark:text-gray-400">Loading users...</span>
+                <span className="text-gray-600 dark:text-gray-400">
+                  Loading users...
+                </span>
               </div>
             </div>
           ) : (
@@ -289,7 +332,10 @@ export default function UserManagement({
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
-                    <TableRow key={user.id} className="border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    <TableRow
+                      key={user.id}
+                      className="border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
                       <TableCell className="font-medium text-gray-900 dark:text-white py-4 px-6">
                         {user.name}
                       </TableCell>
@@ -300,24 +346,30 @@ export default function UserManagement({
                         {getRoleBadge(user.role)}
                       </TableCell>
                       <TableCell className="py-4 px-6">
-                        <Badge 
-                          variant={user.isActive ? 'success' : 'secondary'}
+                        <Badge
+                          variant={user.isActive ? "success" : "secondary"}
                           className="font-medium"
                         >
-                          {user.isActive ? 'Active' : 'Inactive'}
+                          {user.isActive ? "Active" : "Inactive"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
-                        {user.lastLogin ? new Date(user.lastLogin.seconds * 1000).toLocaleDateString() : 'Never'}
+                        {user.lastLogin
+                          ? new Date(
+                              user.lastLogin.seconds * 1000
+                            ).toLocaleDateString()
+                          : "Never"}
                       </TableCell>
                       <TableCell className="py-4 px-6">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleToggleUserStatus(user.id, user.isActive)}
+                          onClick={() =>
+                            handleToggleUserStatus(user.id, user.isActive)
+                          }
                           className="px-4 py-2"
                         >
-                          {user.isActive ? 'Deactivate' : 'Activate'}
+                          {user.isActive ? "Deactivate" : "Activate"}
                         </Button>
                       </TableCell>
                     </TableRow>

@@ -228,7 +228,6 @@ export default function StudentManagement({ uiComponents }) {
 
       // Use the comprehensive stats calculation function
       const result = await studentsService.calculateAndPopulateAllStats(userProfile);
-      console.log('Complete stats calculation result:', result);
 
       // Reload the initial data to show updated stats
       await loadInitialData();

@@ -4,6 +4,18 @@ import { db } from '../lib/firebase';
 
 export const logActivity = async (userId, userName, userEmail, action, details, metadata = {}) => {
   try {
+    // Get IP address if not provided
+    let ipAddress = metadata.ipAddress;
+    if (!ipAddress) {
+      try {
+        const { getClientIP } = await import('./ipUtils');
+        ipAddress = await getClientIP();
+      } catch (error) {
+        console.warn('Could not get IP address:', error);
+        ipAddress = 'Unknown';
+      }
+    }
+
     await addDoc(collection(db, 'activityLogs'), {
       userId,
       userName,
@@ -11,8 +23,9 @@ export const logActivity = async (userId, userName, userEmail, action, details, 
       action,
       details,
       timestamp: serverTimestamp(),
-      ipAddress: metadata.ipAddress || null,
-      userAgent: metadata.userAgent || null,
+      ipAddress,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+      clientTimezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Unknown',
       ...metadata
     });
   } catch (error) {
@@ -27,6 +40,9 @@ export const ACTIVITY_TYPES = {
   CREATE_ACTIVITY: 'create_activity',
   EDIT_ACTIVITY: 'edit_activity',
   DELETE_ACTIVITY: 'delete_activity',
+  ACTIVATE_ACTIVITY: 'activate_activity',
+  DEACTIVATE_ACTIVITY: 'deactivate_activity',
+  CHANGE_ACTIVITY_STATUS: 'change_activity_status',
   MARK_ATTENDANCE: 'mark_attendance',
   UPLOAD_EXCEL: 'upload_excel',
   CREATE_USER: 'create_user',

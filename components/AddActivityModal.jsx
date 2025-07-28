@@ -54,7 +54,7 @@ export default function AddActivityModal({
             })).filter(user => user.role !== 'admin'); // Exclude admins as they have full access
             setAvailableUsers(users);
         } catch (error) {
-            console.error('Error fetching users:', error);
+            // Error fetching users - continue with empty list
         }
     };
 
@@ -202,7 +202,7 @@ export default function AddActivityModal({
         
         const newActivity = {
             ...activity,
-            students: []
+            participants: []
         };
 
         onSubmit(newActivity, uploadedFile);

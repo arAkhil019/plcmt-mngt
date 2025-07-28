@@ -1,43 +1,48 @@
-import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginForm({
-  Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Button
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  Button,
 }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       await login(email, password);
     } catch (error) {
-      console.error('Login error:', error);
       switch (error.code) {
-        case 'auth/user-not-found':
-          setError('No user found with this email address.');
+        case "auth/user-not-found":
+          setError("No user found with this email address.");
           break;
-        case 'auth/wrong-password':
-          setError('Incorrect password.');
+        case "auth/wrong-password":
+          setError("Incorrect password.");
           break;
-        case 'auth/invalid-email':
-          setError('Invalid email address.');
+        case "auth/invalid-email":
+          setError("Invalid email address.");
           break;
-        case 'auth/invalid-credential':
-          setError('Invalid email or password.');
+        case "auth/invalid-credential":
+          setError("Invalid email or password.");
           break;
-        case 'auth/too-many-requests':
-          setError('Too many failed attempts. Please try again later.');
+        case "auth/too-many-requests":
+          setError("Too many failed attempts. Please try again later.");
           break;
         default:
-          setError('Failed to login. Please try again.');
+          setError("Failed to login. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -49,9 +54,9 @@ export default function LoginForm({
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <img 
-              src="/graduation-hat.svg" 
-              alt="Placerly Logo" 
+            <img
+              src="/graduation-hat.svg"
+              alt="Placerly Logo"
               className="h-8 w-8 object-contain"
             />
             <CardTitle className="text-2xl">Placerly</CardTitle>
@@ -89,12 +94,8 @@ export default function LoginForm({
             </div>
           </CardContent>
           <CardFooter>
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </CardFooter>
         </form>
