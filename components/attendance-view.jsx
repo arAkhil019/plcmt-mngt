@@ -126,44 +126,69 @@ export default function AttendanceView({
         !existingAdmissionNumbers.has(result.admissionNumber)
       );
 
-      if (newStudentsToAdd.length === 0) {
+      // Create entries for students not found in database with 'N/A' values
+      const notFoundEntries = searchResults.notFound
+        .filter(notFoundItem => !existingAdmissionNumbers.has(notFoundItem.admissionNumber))
+        .map(notFoundItem => ({
+          admissionNumber: notFoundItem.admissionNumber,
+          name: 'N/A',
+          rollNumber: 'N/A',
+          department: 'N/A',
+          year: 'N/A',
+          attendance: true, // Auto-mark as present
+          attendanceMarkedAt: new Date().toISOString(),
+          attendanceMarkedBy: userProfile.id,
+          attendanceMarkedByName: userProfile.name,
+          addedFromScan: true,
+          addedAt: new Date().toISOString(),
+          dataNotFound: true // Flag to identify records with missing data
+        }));
+
+      // Combine found students and not found entries
+      const allStudentsToAdd = [
+        ...newStudentsToAdd.map(result => ({
+          admissionNumber: result.student.admissionNumber,
+          name: result.student.name,
+          rollNumber: result.student.rollNumber,
+          department: result.student.department,
+          year: result.student.year,
+          attendance: true, // Auto-mark as present
+          attendanceMarkedAt: new Date().toISOString(),
+          attendanceMarkedBy: userProfile.id,
+          attendanceMarkedByName: userProfile.name,
+          addedFromScan: true,
+          addedAt: new Date().toISOString(),
+          dataNotFound: false
+        })),
+        ...notFoundEntries
+      ];
+
+      if (allStudentsToAdd.length === 0) {
         setMappingResults({
           ...searchResults,
           newStudentsToAdd: [],
-          message: "No new students to add. All found students are already participants."
+          notFoundEntries: [],
+          message: "No new admissions to add. All scanned admissions are already participants."
         });
         setShowMappingResults(true);
         return;
       }
 
-      // Prepare participants data for adding to activity
-      const participantsToAdd = newStudentsToAdd.map(result => ({
-        admissionNumber: result.student.admissionNumber,
-        name: result.student.name,
-        rollNumber: result.student.rollNumber,
-        department: result.student.department,
-        year: result.student.year,
-        attendance: true, // Auto-mark as present
-        attendanceMarkedAt: new Date().toISOString(),
-        attendanceMarkedBy: userProfile.id,
-        attendanceMarkedByName: userProfile.name,
-        addedFromScan: true,
-        addedAt: new Date().toISOString()
-      }));
-
       // Add participants to activity
       const addResult = await unifiedActivitiesService.addParticipants(
         activity.id,
-        participantsToAdd,
+        allStudentsToAdd,
         userProfile
       );
 
       setMappingResults({
         ...searchResults,
         newStudentsToAdd,
+        notFoundEntries,
+        allStudentsToAdd,
         addResult,
-        participantsAdded: participantsToAdd,
-        message: `Successfully added ${addResult.added} new participants and marked them as present.`
+        participantsAdded: allStudentsToAdd,
+        message: `Successfully added ${addResult.added} new participants (${newStudentsToAdd.length} found in database, ${notFoundEntries.length} with N/A data) and marked them as present.`
       });
       setShowMappingResults(true);
 
@@ -189,9 +214,9 @@ export default function AttendanceView({
   }, []);
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full max-w-6xl mx-auto px-2 sm:px-0">
       <Card>
-        <CardHeader>
+        <CardHeader className="px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <CardTitle className="text-lg sm:text-xl">Attendance Management</CardTitle>
@@ -205,12 +230,12 @@ export default function AttendanceView({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6">
           {/* Scanned Admissions Section */}
           {scannedAdmissions.length > 0 && (
             <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
+              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
                       <QrCodeIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -222,38 +247,41 @@ export default function AttendanceView({
                       </CardDescription>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       onClick={handleExportAdmissions}
                       variant="outline"
                       size="sm"
-                      className="h-9"
+                      className="h-9 w-full sm:w-auto"
                     >
-                      <DownloadIcon className="w-4 h-4 mr-2" />
-                      Export CSV
+                      <DownloadIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                      <span className="hidden sm:inline">Export CSV</span>
+                      <span className="sm:hidden">Export</span>
                     </Button>
                     <Button
                       onClick={handleMapAdmissions}
                       disabled={isMapping}
                       size="sm"
-                      className="h-9"
+                      className="h-9 w-full sm:w-auto"
                     >
                       {isMapping ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                          Mapping...
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1 sm:mr-2"></div>
+                          <span className="hidden sm:inline">Mapping...</span>
+                          <span className="sm:hidden">Map</span>
                         </>
                       ) : (
                         <>
-                          <UserPlusIcon className="w-4 h-4 mr-2" />
-                          Map to Students
+                          <UserPlusIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                          <span className="hidden sm:inline">Map to Students</span>
+                          <span className="sm:hidden">Map</span>
                         </>
                       )}
                     </Button>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 sm:px-6">
                 <div className="max-h-48 overflow-y-auto border rounded-lg bg-white dark:bg-gray-900">
                   <Table>
                     <TableHeader>
@@ -287,17 +315,17 @@ export default function AttendanceView({
           {/* Mapping Results Modal */}
           {showMappingResults && mappingResults && (
             <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20">
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-3">
+              <CardHeader className="px-4 sm:px-6">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                     <div className="bg-green-100 dark:bg-green-900 p-2 rounded-lg">
                       <CheckCircleIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
                     </div>
                     <div>
-                      <CardTitle className="text-lg text-green-800 dark:text-green-200">
+                      <CardTitle className="text-base sm:text-lg text-green-800 dark:text-green-200">
                         Mapping Results
                       </CardTitle>
-                      <CardDescription className="text-green-700 dark:text-green-300">
+                      <CardDescription className="text-xs sm:text-sm text-green-700 dark:text-green-300">
                         {mappingResults.message}
                       </CardDescription>
                     </div>
@@ -306,14 +334,14 @@ export default function AttendanceView({
                     onClick={closeMappingResults}
                     variant="ghost"
                     size="sm"
-                    className="text-green-600 dark:text-green-400"
+                    className="text-green-600 dark:text-green-400 h-8 w-8 p-1"
                   >
                     ✕
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <CardContent className="px-4 sm:px-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 text-sm">
                   <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border">
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Scanned</div>
                     <div className="text-lg font-semibold text-green-600 dark:text-green-400">
@@ -327,15 +355,15 @@ export default function AttendanceView({
                     </div>
                   </div>
                   <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border">
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Not Found</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Added with N/A Data</div>
                     <div className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">
                       {mappingResults.summary.notFound}
                     </div>
                   </div>
                   <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border">
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Added as Participants</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Added</div>
                     <div className="text-lg font-semibold text-green-600 dark:text-green-400">
-                      {mappingResults.addResult?.added || mappingResults.newStudentsToAdd.length}
+                      {mappingResults.addResult?.added || mappingResults.allStudentsToAdd?.length || 0}
                     </div>
                   </div>
                 </div>
@@ -343,9 +371,12 @@ export default function AttendanceView({
                 {mappingResults.notFound.length > 0 && (
                   <div className="mt-4">
                     <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-                      Admission Numbers Not Found ({mappingResults.notFound.length}):
+                      Admission Numbers Added with N/A Data ({mappingResults.notFound.length}):
                     </h4>
                     <div className="bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded border text-xs">
+                      <div className="mb-2 text-yellow-800 dark:text-yellow-200">
+                        The following admission numbers were not found in the database but were added as participants with 'N/A' values:
+                      </div>
                       {mappingResults.notFound.map(item => item.admissionNumber).join(', ')}
                     </div>
                   </div>
@@ -356,8 +387,8 @@ export default function AttendanceView({
 
           {/* Current Participants Section */}
           <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+            <CardHeader className="px-4 sm:px-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-2">
                 <div className="flex items-center gap-3">
                   <div className="bg-gray-100 dark:bg-gray-800 p-2 rounded-lg">
                     <UsersIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -369,24 +400,25 @@ export default function AttendanceView({
                     </CardDescription>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                   <Button
                     onClick={handleExportParticipants}
                     variant="outline"
                     size="sm"
-                    className="h-9"
+                    className="h-9 w-full sm:w-auto"
                     disabled={!activity.participants || activity.participants.length === 0}
                   >
-                    <DownloadIcon className="w-4 h-4 mr-2" />
-                    Export CSV
+                    <DownloadIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                    <span className="hidden sm:inline">Export CSV</span>
+                    <span className="sm:hidden">Export</span>
                   </Button>
-                  <Badge variant="secondary" className="text-xs sm:text-sm">
+                  <Badge variant="secondary" className="text-xs sm:text-sm w-full sm:w-auto justify-center sm:justify-start">
                     {presentCount} / {totalStudents} Present
                   </Badge>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 sm:px-6">
               <div className="max-h-[400px] sm:max-h-[500px] overflow-y-auto -mx-2 sm:mx-0">
                 <div className="px-2 sm:px-0">
                   <Table>
@@ -403,23 +435,41 @@ export default function AttendanceView({
                       // Use participant's attendance property directly
                       const isPresent = student.attendance;
                       const wasAddedFromScan = student.addedFromScan;
+                      const hasDataNotFound = student.dataNotFound;
+                      const rowClassName = wasAddedFromScan 
+                        ? hasDataNotFound 
+                          ? "bg-yellow-50 dark:bg-yellow-950/10" 
+                          : "bg-green-50 dark:bg-green-950/10"
+                        : "";
+                      
                       return (
-                        <TableRow key={student.admissionNumber || student.id} className={wasAddedFromScan ? "bg-green-50 dark:bg-green-950/10" : ""}>
+                        <TableRow key={student.admissionNumber || student.id} className={rowClassName}>
                           <TableCell className="font-mono text-xs p-2 sm:p-4 truncate">
                             <div className="flex items-center gap-1">
                               {student.admissionNumber || student.id}
                               {wasAddedFromScan && (
-                                <Badge variant="outline" className="text-xs px-1 py-0 bg-green-100 text-green-700 border-green-300">
-                                  Scanned
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs px-1 py-0 ${
+                                    hasDataNotFound 
+                                      ? "bg-yellow-100 text-yellow-700 border-yellow-300" 
+                                      : "bg-green-100 text-green-700 border-green-300"
+                                  }`}
+                                >
+                                  {hasDataNotFound ? "N/A Data" : "Scanned"}
                                 </Badge>
                               )}
                             </div>
                           </TableCell>
                           <TableCell className="font-medium text-xs sm:text-sm p-2 sm:p-4 truncate max-w-0">
-                            {student.name}
+                            <span className={hasDataNotFound ? "text-yellow-600 dark:text-yellow-400 italic" : ""}>
+                              {student.name}
+                            </span>
                           </TableCell>
                           <TableCell className="text-xs text-gray-500 p-2 sm:p-4 hidden md:table-cell">
-                            {student.department || "N/A"}
+                            <span className={hasDataNotFound ? "text-yellow-600 dark:text-yellow-400 italic" : ""}>
+                              {student.department || "N/A"}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right p-1 sm:p-4">
                             {isPresent ? (

@@ -469,7 +469,7 @@ export default function AdmissionScanner({
 
   // Component is ready to render immediately
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50">
       <div
         className={`w-full h-full max-h-[95vh] ${
           isScanning ? "max-w-4xl" : "max-w-6xl"
@@ -477,23 +477,25 @@ export default function AdmissionScanner({
       >
         <Card className="h-full flex flex-col shadow-2xl overflow-hidden">
           <CardHeader className="bg-primary text-primary-foreground">
-            <div className="flex justify-between items-start p-2">
-              <div className="flex-1 pr-4">
-                <CardTitle className="text-xl font-semibold flex items-center gap-3 mb-2">
+            <div className="flex justify-between items-start p-2 sm:p-2">
+              <div className="flex-1 pr-2 sm:pr-4">
+                <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
                   {isScanning ? (
                     <>
-                      <div className="animate-pulse bg-destructive rounded-full w-3 h-3"></div>
-                      Scanner Active
+                      <div className="animate-pulse bg-destructive rounded-full w-2 sm:w-3 h-2 sm:h-3"></div>
+                      <span className="hidden sm:inline">Scanner Active</span>
+                      <span className="sm:hidden">Active</span>
                     </>
                   ) : (
                     <>
-                      <QrCodeIcon className="w-6 h-6" />
-                      Admission Scanner
+                      <QrCodeIcon className="w-5 sm:w-6 h-5 sm:h-6" />
+                      <span className="hidden sm:inline">Admission Scanner</span>
+                      <span className="sm:hidden">Scanner</span>
                     </>
                   )}
                 </CardTitle>
-                <CardDescription className="text-primary-foreground/80 leading-relaxed">
-                  {activity.companyName || activity.name} •{" "}
+                <CardDescription className="text-primary-foreground/80 leading-relaxed text-xs sm:text-sm">
+                  <span className="hidden sm:inline">{activity.companyName || activity.name} • </span>
                   {isScanning
                     ? "Scanning in progress"
                     : "Scan or enter admission numbers"}
@@ -503,14 +505,14 @@ export default function AdmissionScanner({
                 variant="ghost"
                 size="sm"
                 onClick={onClose}
-                className="text-primary-foreground hover:bg-primary-foreground/20 h-10 w-10 p-2 shrink-0"
+                className="text-primary-foreground hover:bg-primary-foreground/20 h-8 w-8 sm:h-10 sm:w-10 p-1 sm:p-2 shrink-0"
               >
                 ✕
               </Button>
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto">
+          <CardContent className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-6">
             <div className="p-6 space-y-6 min-h-0">
               {/* Camera Feed Section - Prominent when scanning */}
               {isScanning && (
@@ -534,10 +536,11 @@ export default function AdmissionScanner({
                       onClick={stopScanner}
                       variant="destructive"
                       size="sm"
-                      className="shrink-0 ml-4"
+                      className="shrink-0 ml-2 sm:ml-4"
                     >
-                      <div className="w-2 h-2 bg-background rounded-full mr-2"></div>
-                      Stop Scanner
+                      <div className="w-2 h-2 bg-background rounded-full mr-1 sm:mr-2"></div>
+                      <span className="hidden sm:inline">Stop Scanner</span>
+                      <span className="sm:hidden">Stop</span>
                     </Button>
                   </div>
 
@@ -581,14 +584,14 @@ export default function AdmissionScanner({
                   )}
 
                   {/* QR Scanner Container - Ensure camera is visible */}
-                  <div className="flex justify-center mb-6">
-                    <div className="bg-background p-4 rounded-lg border-2 border-border shadow-lg">
+                  <div className="flex justify-center mb-4 sm:mb-6">
+                    <div className="bg-background p-2 sm:p-4 rounded-lg border-2 border-border shadow-lg w-full max-w-sm">
                       <div
                         id="admission-qr-reader"
-                        className="rounded-md overflow-hidden"
+                        className="rounded-md overflow-hidden w-full"
                         style={{
-                          minHeight: "300px",
-                          minWidth: "300px",
+                          minHeight: "250px",
+                          minWidth: "250px",
                           maxWidth: "100%",
                           display: "block",
                         }}
@@ -628,10 +631,11 @@ export default function AdmissionScanner({
                     <Button
                       onClick={startScanner}
                       disabled={!isScriptLoaded}
-                      className="shadow-lg shrink-0 ml-4"
+                      className="shadow-lg shrink-0 ml-2 sm:ml-4"
                     >
-                      <QrCodeIcon className="w-4 h-4 mr-2" />
-                      Start Scanner
+                      <QrCodeIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                      <span className="hidden sm:inline">Start Scanner</span>
+                      <span className="sm:hidden">Start</span>
                     </Button>
                   </div>
 
@@ -667,8 +671,8 @@ export default function AdmissionScanner({
 
               {/* Manual Input Section */}
               <Card className={isScanning ? "shadow-md" : "shadow-lg"}>
-                <CardContent className={isScanning ? "p-5" : "p-6"}>
-                  <div className="flex items-start gap-4 mb-6">
+                <CardContent className={isScanning ? "p-3 sm:p-5" : "p-4 sm:p-6"}>
+                  <div className="flex items-start gap-3 sm:gap-4 mb-4 sm:mb-6">
                     <div className="bg-accent p-3 rounded-lg shrink-0">
                       <EditIcon className="w-5 h-5 text-accent-foreground" />
                     </div>
@@ -692,21 +696,23 @@ export default function AdmissionScanner({
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-2 sm:gap-3">
                     <input
                       type="text"
                       placeholder="Enter admission number..."
                       value={manualInput}
                       onChange={(e) => setManualInput(e.target.value)}
                       onKeyPress={(e) => e.key === "Enter" && handleManualAdd()}
-                      className="flex-1 px-4 py-3 border border-input rounded-lg bg-background focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                      className="flex-1 px-3 sm:px-4 py-2 sm:py-3 text-sm border border-input rounded-lg bg-background focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
                     />
                     <Button
                       onClick={handleManualAdd}
                       disabled={!manualInput.trim()}
-                      className="px-6 shrink-0"
+                      className="px-3 sm:px-6 shrink-0"
+                      size="sm"
                     >
-                      Add Number
+                      <span className="hidden sm:inline">Add Number</span>
+                      <span className="sm:hidden">Add</span>
                     </Button>
                   </div>
 
@@ -739,9 +745,9 @@ export default function AdmissionScanner({
 
               {/* Scanned Admissions List */}
               <Card className={isScanning ? "shadow-md" : "shadow-lg"}>
-                <CardContent className={isScanning ? "p-5" : "p-6"}>
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-start gap-4 flex-1">
+                <CardContent className={isScanning ? "p-3 sm:p-5" : "p-4 sm:p-6"}>
+                  <div className="flex justify-between items-start mb-4 sm:mb-6">
+                    <div className="flex items-start gap-3 sm:gap-4 flex-1">
                       <div className="bg-secondary p-3 rounded-lg shrink-0">
                         <UsersIcon className="w-5 h-5 text-secondary-foreground" />
                       </div>
@@ -881,28 +887,30 @@ export default function AdmissionScanner({
             </div>
           </CardContent>
 
-          <CardFooter className="border-t p-6">
-            <div className="flex justify-between items-center w-full">
-              <Button variant="outline" onClick={onClose} className="px-8 py-2">
+          <CardFooter className="border-t p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center w-full gap-3 sm:gap-0">
+              <Button variant="outline" onClick={onClose} className="w-full sm:w-auto px-6 sm:px-8 py-2 order-2 sm:order-1">
                 Cancel
               </Button>
 
-              <div className="flex gap-4">
+              <div className="flex gap-2 sm:gap-4 w-full sm:w-auto order-1 sm:order-2">
                 {scannedAdmissions.length > 0 && (
                   <Button 
                     onClick={handleComplete} 
                     disabled={isSaving}
-                    className="px-8 py-2"
+                    className="flex-1 sm:flex-none px-4 sm:px-8 py-2"
                   >
                     {isSaving ? (
                       <>
                         <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                        Saving...
+                        <span className="hidden sm:inline">Saving...</span>
+                        <span className="sm:hidden">Save</span>
                       </>
                     ) : (
                       <>
-                        <CheckCircleIcon className="w-5 h-5 mr-3" />
-                        Save Admissions
+                        <CheckCircleIcon className="w-4 sm:w-5 h-4 sm:h-5 mr-2 sm:mr-3" />
+                        <span className="hidden sm:inline">Save Admissions</span>
+                        <span className="sm:hidden">Save</span>
                       </>
                     )}
                   </Button>
