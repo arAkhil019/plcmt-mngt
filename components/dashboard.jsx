@@ -24,7 +24,9 @@ export default function Dashboard({
   onEditActivity,
   onDeleteActivity,
   onChangeActivityStatus,
-  onAdmissionScan, // Add new prop for admission scanning
+  isLoadingActivities,
+  activitiesError,
+  onRefresh,
   Card,
   CardHeader,
   CardTitle,
@@ -194,21 +196,59 @@ export default function Dashboard({
           </Button>
         </div>
         
-        {/* Summary Stats */}
-        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-          <span>Total: {activities.length} activities</span>
-          {dashboardTab === "active" && (
-            <span>Showing: {filteredActivities.length} active</span>
-          )}
-          {dashboardTab === "inactive" && (
-            <span>Showing: {filteredActivities.length} inactive</span>
+        {/* Summary Stats and Refresh Button */}
+        <div className="flex items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-4">
+            <span>Total: {activities.length} activities</span>
+            {dashboardTab === "active" && (
+              <span>Showing: {filteredActivities.length} active</span>
+            )}
+            {dashboardTab === "inactive" && (
+              <span>Showing: {filteredActivities.length} inactive</span>
+            )}
+          </div>
+          
+          {onRefresh && (
+            <Button
+              onClick={onRefresh}
+              disabled={isLoadingActivities}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <RefreshIcon className={`h-4 w-4 ${isLoadingActivities ? 'animate-spin' : ''}`} />
+              {isLoadingActivities ? 'Loading...' : 'Refresh'}
+            </Button>
           )}
         </div>
       </div>
 
+      {/* Error State */}
+      {activitiesError && (
+        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <h3 className="text-red-800 dark:text-red-200 font-medium mb-2">Error Loading Activities</h3>
+          <p className="text-red-700 dark:text-red-300 text-sm">{activitiesError}</p>
+          {onRefresh && (
+            <Button onClick={onRefresh} variant="outline" size="sm" className="mt-3">
+              Try Again
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoadingActivities && !activitiesError && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <RefreshIcon className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+            <p className="text-gray-500 dark:text-gray-400">Loading activities...</p>
+          </div>
+        </div>
+      )}
+
       {/* Activities Grid */}
       <div>
-        {filteredActivities.length > 0 ? (
+        {!isLoadingActivities && !activitiesError && filteredActivities.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {filteredActivities.map((activity) => {
               // Calculate present count using participant attendance property
@@ -329,40 +369,30 @@ export default function Dashboard({
                       )}
                     </Button>
                     
-                    {/* View Attendance Button - Available for all activities */}
-                    <Button
-                      onClick={() => onViewAttendance && onViewAttendance(activity)}
-                      variant="outline"
-                      className="w-full h-8 sm:h-9 px-3 text-xs sm:text-sm font-medium border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                    >
-                      <UsersIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
-                      View Attendance
-                    </Button>
+                    {/* View Attendance Button - Only for active activities (inactive activities already have it as primary action) */}
+                    {activity.status !== "Inactive" && (
+                      <Button
+                        onClick={() => onViewAttendance && onViewAttendance(activity)}
+                        variant="outline"
+                        className="w-full h-8 sm:h-9 px-3 text-xs sm:text-sm font-medium border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        <UsersIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
+                        View Attendance
+                      </Button>
+                    )}
                     
                     {/* Secondary Actions Row - Responsive icon buttons */}
                     {canManageActivity(activity) && (
-                      <div className="flex gap-1 sm:gap-1.5 w-full">
-                        {/* Admission Scanner for Active Activities */}
-                        {activity.status === "Active" && onAdmissionScan && (
-                          <Button
-                            onClick={() => onAdmissionScan(activity)}
-                            variant="outline"
-                            className="flex-1 min-w-0 h-7 sm:h-8 md:h-9 px-1 sm:px-2 text-xs border-green-200 text-green-600 hover:bg-green-50 hover:text-green-700 flex items-center justify-center"
-                            title="Admission Scanner"
-                          >
-                            <QrCodeIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 flex-shrink-0" />
-                          </Button>
-                        )}
-
-                        {/* Edit Button for Active Activities */}
-                        {activity.status === "Active" && onEditActivity && (
+                      <div className="flex gap-1.5 sm:gap-2 w-full">
+                        {/* Edit Button - Available for all activities */}
+                        {onEditActivity && (
                           <Button
                             onClick={() => onEditActivity(activity)}
                             variant="outline"
-                            className="flex-1 min-w-0 h-7 sm:h-8 md:h-9 px-1 sm:px-2 text-xs flex items-center justify-center"
+                            className="flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm flex items-center justify-center"
                             title="Edit Activity"
                           >
-                            <EditIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 flex-shrink-0" />
+                            <EditIcon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
                           </Button>
                         )}
 
@@ -376,7 +406,7 @@ export default function Dashboard({
                                 onChangeActivityStatus(activity, option.value)
                               }
                               variant="outline"
-                              className={`flex-1 min-w-0 h-7 sm:h-8 md:h-9 px-1 sm:px-2 text-xs flex items-center justify-center ${
+                              className={`flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm flex items-center justify-center ${
                                 option.color === "green"
                                   ? "hover:bg-green-50 hover:text-green-700 border-green-200 text-green-600"
                                   : option.color === "blue"
@@ -385,7 +415,7 @@ export default function Dashboard({
                               }`}
                               title={option.label}
                             >
-                              <option.icon className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 flex-shrink-0" />
+                              <option.icon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
                             </Button>
                           ))}
 
@@ -396,10 +426,10 @@ export default function Dashboard({
                             <Button
                               onClick={() => onDeleteActivity(activity)}
                               variant="outline"
-                              className="flex-1 min-w-0 h-7 sm:h-8 md:h-9 px-1 sm:px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 flex items-center justify-center"
+                              className="flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 flex items-center justify-center"
                               title="Delete Activity"
                             >
-                              <TrashIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 flex-shrink-0" />
+                              <TrashIcon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
                             </Button>
                           )}
                       </div>
@@ -409,7 +439,7 @@ export default function Dashboard({
               );
             })}
           </div>
-        ) : (
+        ) : !isLoadingActivities && !activitiesError ? (
           <div className="text-center py-12">
             <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
               {dashboardTab === "active" ? (
@@ -435,7 +465,15 @@ export default function Dashboard({
               }
             </p>
             {activities.length === 0 && (
-              <Button onClick={onAddActivityClick}>+ Add Activity</Button>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <Button onClick={onAddActivityClick}>+ Add Activity</Button>
+                {onRefresh && (
+                  <Button onClick={onRefresh} variant="outline">
+                    <RefreshIcon className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                )}
+              </div>
             )}
             {activities.length > 0 && dashboardTab === "active" && (
               <div className="flex flex-col sm:flex-row gap-2 justify-center">
@@ -457,7 +495,7 @@ export default function Dashboard({
               </Button>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

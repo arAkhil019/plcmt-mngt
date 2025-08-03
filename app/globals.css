@@ -24,3 +24,28 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Enhanced icon visibility */
+svg {
+  stroke-width: 2.5;
+}
+
+button svg {
+  stroke-width: 2.5;
+  opacity: 0.8;
+  transition: opacity 0.2s ease-in-out;
+}
+
+button:hover svg {
+  opacity: 1;
+  stroke-width: 3;
+}
+
+/* Better button contrast */
+button[variant="outline"] {
+  border-width: 1.5px;
+}
+
+button[variant="outline"]:hover {
+  border-width: 2px;
+}

@@ -13,18 +13,18 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { logActivity, ACTIVITY_TYPES } from "../utils/activityLogger";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
+import { studentsService } from "../lib/studentsService";
 import {
   activityLogsService,
   ACTIVITY_LOG_TYPES,
 } from "../lib/activityLogsService";
 import { useToast } from "../hooks/useToast";
 import Dashboard from "../components/dashboard";
-import BarcodeScannerPage from "../components/scanner";
+import MarkAttendance from "../components/markAttendance";
 import AttendanceView from "../components/attendance-view";
 import ColumnMappingModal from "../components/ColMapModal";
 import AddActivityModal from "../components/AddActivityModal";
 import EditActivityModal from "../components/EditActivityModal";
-import AdmissionScanner from "../components/AdmissionScanner";
 import LoginForm from "../components/LoginForm";
 import UserManagement from "../components/UserManagement";
 import StudentManagement from "../components/StudentManagement";
@@ -177,6 +177,8 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [activities, setActivities] = useState([]);
+  const [isLoadingActivities, setIsLoadingActivities] = useState(true);
+  const [activitiesError, setActivitiesError] = useState(null);
   const [isScannerScriptLoaded, setIsScannerScriptLoaded] = useState(false);
   const [isXlsxScriptLoaded, setIsXlsxScriptLoaded] = useState(false);
   const [colMapModalData, setColMapModalData] = useState({
@@ -204,10 +206,6 @@ export default function Home() {
     title: "",
     message: "",
     progress: null,
-  });
-  const [admissionScannerModal, setAdmissionScannerModal] = useState({
-    isOpen: false,
-    activity: null,
   });
 
   // Helper functions for dialogs
@@ -254,6 +252,9 @@ export default function Home() {
     const loadActivities = async () => {
       if (user && userProfile && !loading) {
         try {
+          setIsLoadingActivities(true);
+          setActivitiesError(null);
+          
           // Use unified service to get all activities
           const unifiedActivities =
             await unifiedActivitiesService.getAllActivities();
@@ -265,8 +266,12 @@ export default function Home() {
 
           setActivities(sortedActivities);
         } catch (error) {
-          showToast("Failed to load activities", "error");
+          console.error("Error loading activities:", error);
+          setActivitiesError(`Failed to load activities: ${error.message}`);
+          showError("Failed to load activities");
           setActivities([]);
+        } finally {
+          setIsLoadingActivities(false);
         }
       }
     };
@@ -278,18 +283,26 @@ export default function Home() {
   const reloadActivities = useCallback(async () => {
     if (user && userProfile && !loading) {
       try {
+        setIsLoadingActivities(true);
+        setActivitiesError(null);
+        
         const unifiedActivities =
           await unifiedActivitiesService.getAllActivities();
         const sortedActivities = unifiedActivities.sort(
           (a, b) => new Date(b.date) - new Date(a.date)
         );
         setActivities(sortedActivities);
+        showSuccess("Activities refreshed successfully");
       } catch (error) {
-        showToast("Failed to reload activities", "error");
+        console.error("Error reloading activities:", error);
+        setActivitiesError(`Failed to reload activities: ${error.message}`);
+        showError("Failed to reload activities");
         setActivities([]);
+      } finally {
+        setIsLoadingActivities(false);
       }
     }
-  }, [user, userProfile, loading]);
+  }, [user, userProfile, loading, showSuccess, showError]);
 
   // All hooks must be called before any return or conditional logic
   const hasPermission = (requiredRole) => {
@@ -525,27 +538,11 @@ export default function Home() {
         return;
       }
 
-      // Find participant by admission number or ID
-      const participant = activity.participants?.find(
-        (p) => p.admissionNumber === studentId || p.id === studentId
-      );
-
-      if (!participant) {
-        showError("Participant not found in this activity.");
-        return;
-      }
-
-      // Check permissions
+      // Check permissions first
       if (!canMarkAttendance(activity)) {
         showError(
           "You do not have permission to mark attendance for this activity."
         );
-        return;
-      }
-
-      // Check if already marked
-      if (participant?.attendance) {
-        showWarning("Participant attendance is already marked.");
         return;
       }
 
@@ -560,20 +557,47 @@ export default function Home() {
           );
         }
 
-        // Mark attendance using unified service
-        await unifiedActivitiesService.markAttendance(
+        // NEW WORKFLOW: Add scanned admission number to scannedAdmissions list
+        const currentActivity = await unifiedActivitiesService.getActivityById(activity.id);
+        const currentScannedAdmissions = currentActivity.scannedAdmissions || [];
+        
+        // Normalize the scanned student ID for consistent comparison
+        const normalizedStudentId = String(studentId).trim().toUpperCase();
+        
+        // Check if already scanned
+        const alreadyScanned = currentScannedAdmissions.some(
+          item => String(item.admissionNumber).trim().toUpperCase() === normalizedStudentId
+        );
+        
+        if (alreadyScanned) {
+          showWarning(`Admission number ${studentId} has already been scanned.`);
+          return;
+        }
+
+        // Add to scanned admissions
+        const newScannedAdmission = {
+          admissionNumber: studentId,
+          scannedAt: new Date().toISOString(),
+          scannedBy: userProfile?.id || "unknown",
+          scannedByName: userProfile?.name || "Unknown User"
+        };
+
+        const updatedScannedAdmissions = [...currentScannedAdmissions, newScannedAdmission];
+
+        // Update activity with new scanned admission
+        await unifiedActivitiesService.updateActivity(
           activity.id,
-          participant.admissionNumber || studentId,
-          true,
+          { scannedAdmissions: updatedScannedAdmissions },
           userProfile
         );
 
         // Reload activities to reflect changes
         await reloadActivities();
 
-        showSuccess(`Attendance marked for ${participant.name}`);
+        showSuccess(`Admission number ${studentId} scanned successfully. Use "View Attendance" to map and mark students as present.`);
       } catch (error) {
-        showError(`Failed to mark attendance: ${error.message}`);
+        console.error("Error handling mark attendance:", error);
+        showError(`Failed to scan admission number: ${error.message}`);
       }
     },
     [
@@ -712,63 +736,6 @@ export default function Home() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleAdmissionScan = (activity) => {
-    setAdmissionScannerModal({ isOpen: true, activity });
-  };
-
-  const handleAdmissionScanClose = () => {
-    setAdmissionScannerModal({ isOpen: false, activity: null });
-  };
-
-  const handleScanningComplete = async (mappedStudents) => {
-    try {
-      // Transform mapped students to participant format
-      const participants = mappedStudents.map((item) => ({
-        name: item.student?.name || '',
-        rollNumber: item.student?.rollNumber || '',
-        admissionNumber: item.student?.admissionNumber || '',
-        department: item.student?.department || '',
-        departmentCode: item.student?.departmentCode || '',
-        year: item.student?.year || new Date().getFullYear(),
-        attendance: false,
-        addedViaScanning: true,
-      })).filter(p => p.admissionNumber && p.name); // Filter out incomplete records
-
-      // Add participants to the activity using unified service
-      const activity = admissionScannerModal.activity;
-
-      const updatedActivity = await unifiedActivitiesService.addParticipants(
-        activity.id,
-        participants,
-        userProfile
-      );
-
-      // Reload activities to show the updated participant list
-      await reloadActivities();
-
-      showSuccess(
-        `Successfully added ${participants.length} students to ${activity.companyName}`
-      );
-
-      // Log the activity
-      await activityLogsService.logActivity(
-        userProfile?.id,
-        userProfile?.name,
-        userProfile?.email,
-        ACTIVITY_LOG_TYPES.UPDATE_ACTIVITY,
-        `Added ${participants.length} students via admission scanning to ${activity.companyName}`,
-        {
-          activityId: activity.id,
-          companyName: activity.companyName,
-          addedStudents: participants.length,
-          method: "admission_scanning",
-        }
-      );
-    } catch (error) {
-      showError(`Failed to add scanned students: ${error.message}`);
-    }
-  };
-
   const handleColMapModalClose = () => {
     setColMapModalData({
       isOpen: false,
@@ -844,7 +811,7 @@ export default function Home() {
         }
 
         // Show processing message
-        const processingMessage = `Processing ${participants.length} participants...\nThis may take a few minutes for large files.\nPlease do not close this window.`;
+        const processingMessage = `Processing ${participants.length} participants...\nSearching for student details in database.\nThis may take a few minutes for large files.\nPlease do not close this window.`;
 
         // Show progress dialog
         showProgressDialog(
@@ -853,19 +820,57 @@ export default function Home() {
           null // Indeterminate progress
         );
 
-        // Transform participants data for unified service
-        const participantsList = participants.map((participant) => ({
-          name: participant.name || participant.providedName || '',
-          rollNumber: participant.rollNumber || '',
-          admissionNumber: participant.admissionNumber || '',
-          department: participant.department || '',
-          departmentCode: participant.departmentCode || '',
-          year: participant.year || participant.joiningYear || new Date().getFullYear(),
-          addedAt: new Date().toISOString(),
-          addedBy: userProfile?.name || 'Unknown User',
-          addedById: userProfile?.id || 'unknown',
-          attendance: false, // Initialize attendance as false
-        })).filter(p => p.admissionNumber && p.name); // Filter out incomplete records
+        // Extract roll numbers for batch search
+        const rollNumbers = participants.map(p => p.rollNumber);
+        
+        // Use optimized batch search to find student details
+        const searchResults = await studentsService.batchSearchByRollNumbers(rollNumbers);
+        
+        // Transform participants with found student data
+        const participantsList = participants.map((participant) => {
+          // Find matching student data from search results
+          const foundStudent = searchResults.found.find(result => 
+            result.rollNumber === participant.rollNumber
+          );
+          
+          if (foundStudent && foundStudent.student) {
+            // Use complete student data from database
+            return {
+              name: foundStudent.student.name || "N/A",
+              rollNumber: foundStudent.student.rollNumber || "N/A",
+              admissionNumber: foundStudent.student.admissionNumber || "N/A",
+              department: foundStudent.student.department || "N/A",
+              departmentCode: foundStudent.student.departmentCode || "N/A",
+              year: foundStudent.student.year || "N/A",
+              addedAt: new Date().toISOString(),
+              addedBy: userProfile?.name || 'Unknown User',
+              addedById: userProfile?.id || 'unknown',
+              attendance: false, // Initialize attendance as false
+              fromExcel: true, // Mark as added from Excel
+            };
+          } else {
+            // Use data from Excel file if student not found in database
+            return {
+              name: participant.name || "N/A",
+              rollNumber: participant.rollNumber || "N/A",
+              admissionNumber: "N/A", // Will be empty for students not found in database
+              department: "N/A",
+              departmentCode: "N/A",
+              year: "N/A",
+              addedAt: new Date().toISOString(),
+              addedBy: userProfile?.name || 'Unknown User',
+              addedById: userProfile?.id || 'unknown',
+              attendance: false,
+              fromExcel: true,
+              notFoundInDatabase: true, // Mark as not found in database
+            };
+          }
+        }).filter(p => p.name && p.rollNumber); // Filter out incomplete records
+
+        // Update progress message with search results
+        const foundCount = searchResults.summary.found;
+        const notFoundCount = searchResults.summary.notFound;
+        updateProgressDialog(`Found ${foundCount} students in database, ${notFoundCount} not found. Adding participants...`);
 
         try {
           let savedActivity;
@@ -878,10 +883,20 @@ export default function Home() {
             );
 
             // Add participants to the activity
-            await unifiedActivitiesService.addParticipants(
+            const result = await unifiedActivitiesService.addParticipants(
               savedActivity.id,
               participantsList,
               userProfile
+            );
+
+            // Show detailed success message
+            hideProgressDialog();
+            showSuccess(
+              `✅ Successfully processed participants for ${activityDetails.companyName}:\n` +
+              `• ${result.added} new students added\n` +
+              `• ${result.updated} existing students updated\n` +
+              `• ${result.duplicates} duplicates skipped\n` +
+              `• ${searchResults.summary.notFound} students not found in database`
             );
           } else {
             // Update existing activity with new participant details
@@ -889,10 +904,20 @@ export default function Home() {
               throw new Error(`Invalid activity ID for update: ${activityId}`);
             }
 
-            savedActivity = await unifiedActivitiesService.addParticipants(
+            const result = await unifiedActivitiesService.addParticipants(
               activityId,
               participantsList,
               userProfile
+            );
+
+            // Show detailed success message
+            hideProgressDialog();
+            showSuccess(
+              `✅ Successfully processed participants:\n` +
+              `• ${result.added} new students added\n` +
+              `• ${result.updated} existing students updated\n` +
+              `• ${result.duplicates} duplicates skipped\n` +
+              `• ${searchResults.summary.notFound} students not found in database`
             );
           }
 
@@ -908,11 +933,6 @@ export default function Home() {
             await reloadActivities();
           }
 
-          // Hide progress dialog and show success message
-          hideProgressDialog();
-          showSuccess(
-            `✅ Successfully processed ${participantsList.length} participants for ${activityDetails.companyName}`
-          );
         } catch (processingError) {
           hideProgressDialog();
           showError(
@@ -930,8 +950,8 @@ export default function Home() {
   };
 
   const DashboardWithUI = (props) => <Dashboard {...props} {...uiComponents} />;
-  const BarcodeScannerPageWithUI = (props) => (
-    <BarcodeScannerPage {...props} {...uiComponents} />
+  const MarkAttendanceWithUI = (props) => (
+    <MarkAttendance {...props} {...uiComponents} />
   );
   const AttendanceViewWithUI = (props) => (
     <AttendanceView {...props} {...uiComponents} userProfile={userProfile} />
@@ -953,9 +973,6 @@ export default function Home() {
   );
   const ActivityLogsWithUI = (props) => (
     <ActivityLogs {...props} {...uiComponents} />
-  );
-  const AdmissionScannerWithUI = (props) => (
-    <AdmissionScanner {...props} {...uiComponents} />
   );
 
   const handleLogout = async () => {
@@ -1027,14 +1044,6 @@ export default function Home() {
         activity={editActivityModal.activity}
         onShowConfirmDialog={showConfirmDialog}
       />
-      {admissionScannerModal.isOpen && (
-        <AdmissionScannerWithUI
-          activity={admissionScannerModal.activity}
-          userProfile={userProfile}
-          onClose={handleAdmissionScanClose}
-          isScriptLoaded={isScannerScriptLoaded}
-        />
-      )}
       <div className="bg-gray-50 dark:bg-black min-h-screen text-gray-800 dark:text-gray-200 font-sans">
         <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
           <nav className="container mx-auto px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between">
@@ -1222,10 +1231,12 @@ export default function Home() {
               onEditActivity={handleEditActivity}
               onDeleteActivity={handleDeleteActivity}
               onChangeActivityStatus={handleChangeActivityStatus}
-              onAdmissionScan={handleAdmissionScan}
               userProfile={userProfile}
               userRole={userProfile?.role}
               userId={userProfile?.id}
+              isLoadingActivities={isLoadingActivities}
+              activitiesError={activitiesError}
+              onRefresh={reloadActivities}
             />
           )}
           {currentPage === "users" && userProfile?.role === "admin" && (
@@ -1238,8 +1249,9 @@ export default function Home() {
             <ActivityLogsWithUI />
           )}
           {currentPage === "scanner" && selectedActivity && (
-            <BarcodeScannerPageWithUI
-              company={selectedActivity}
+            <MarkAttendanceWithUI
+              activity={selectedActivity}
+              userProfile={userProfile}
               onBack={handleBackToDashboard}
               onMarkAttendance={handleMarkAttendance}
               isScriptLoaded={isScannerScriptLoaded}
