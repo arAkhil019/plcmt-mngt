@@ -148,6 +148,23 @@ export default function AttendanceView({
         newParticipantsToAdd.push(participantData);
       });
 
+      // Process admission numbers not found in database - create participants with N/A values
+      searchResults.notFound.forEach((item) => {
+        const participantData = {
+          admissionNumber: item.admissionNumber || "N/A",
+          name: "N/A",
+          rollNumber: "N/A",
+          department: "N/A",
+          departmentCode: "N/A",
+          year: "N/A",
+          attendance: true,
+          addedViaScanning: true,
+          notFoundInDatabase: true, // Flag to indicate this was not found in database
+        };
+
+        newParticipantsToAdd.push(participantData);
+      });
+
       // Step 4a: Mark attendance for existing participants (if any)
       if (attendanceUpdates.length > 0) {
         await unifiedActivitiesService.markAttendanceForParticipants(
@@ -162,7 +179,7 @@ export default function AttendanceView({
 
       // Step 4b: Add new participants to the activity (if any)
       if (newParticipantsToAdd.length > 0) {
-        await unifiedActivitiesService.addParticipants(
+        const addResult = await unifiedActivitiesService.addParticipants(
           activity.id,
           newParticipantsToAdd,
           {
@@ -192,6 +209,7 @@ export default function AttendanceView({
         notFoundNumbers: searchResults.notFound.map(
           (item) => item.admissionNumber
         ),
+        createdFromNotFound: searchResults.notFound.length, // New field to track created participants
       });
     } catch (error) {
       console.error("Error mapping and marking attendance:", error);
@@ -484,13 +502,13 @@ export default function AttendanceView({
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
-                    <XCircleIcon className="w-8 h-8 text-red-600" />
+                  <div className="flex items-center gap-3 p-3 bg-yellow-50 rounded-lg">
+                    <XCircleIcon className="w-8 h-8 text-yellow-600" />
                     <div>
-                      <div className="text-2xl font-bold text-red-800">
+                      <div className="text-2xl font-bold text-yellow-800">
                         {mappingResults.notFound || 0}
                       </div>
-                      <div className="text-sm text-red-600">Not Found</div>
+                      <div className="text-sm text-yellow-600">Created with N/A</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -518,7 +536,7 @@ export default function AttendanceView({
                 {mappingResults.notFound > 0 && (
                   <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
                     <h4 className="font-medium text-yellow-800 mb-2">
-                      Admission numbers not found:
+                      Admission numbers not found in database - Created as participants with N/A details:
                     </h4>
                     <div className="flex flex-wrap gap-2">
                       {mappingResults.notFoundNumbers.map((num, index) => (
@@ -531,6 +549,10 @@ export default function AttendanceView({
                         </Badge>
                       ))}
                     </div>
+                    <p className="text-sm text-yellow-700 mt-2">
+                      These participants have been added to the activity with their admission numbers. 
+                      You can edit their details manually if needed.
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -595,7 +617,10 @@ export default function AttendanceView({
                     </TableHeader>
                     <TableBody>
                       {participants.map((participant, index) => (
-                        <TableRow key={index}>
+                        <TableRow 
+                          key={index}
+                          className={participant.notFoundInDatabase ? "bg-gray-50/50" : ""}
+                        >
                           <TableCell className="font-mono font-medium">
                             {editingParticipant === index ? (
                               <input
@@ -629,7 +654,14 @@ export default function AttendanceView({
                                 placeholder="Student Name"
                               />
                             ) : (
-                              participant.name || "N/A"
+                              <div className="flex items-center gap-2">
+                                {participant.name || "N/A"}
+                                {participant.notFoundInDatabase && (
+                                  <Badge variant="outline" className="text-xs text-gray-600 border-gray-300 bg-gray-50">
+                                    Manual Entry
+                                  </Badge>
+                                )}
+                              </div>
                             )}
                           </TableCell>
                           <TableCell className="text-sm">

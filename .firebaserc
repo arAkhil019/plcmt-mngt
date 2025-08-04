@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "placement-tracker-cbit"
-  }
+  },
+  "targets": {
+    "placement-tracker-cbit": {
+      "hosting": {
+        "placerly": [
+          "placerly"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

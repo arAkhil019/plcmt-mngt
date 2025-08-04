@@ -230,6 +230,15 @@ export default function MarkAttendance({
         return;
       }
 
+      // Validate admission number format (7 digits starting with "22")
+      const isValidFormat = /^22\d{5}$/.test(admissionNumber);
+      
+      if (!isValidFormat) {
+        setScanFeedback(`Invalid admission number format: ${admissionNumber}. Expected format: 7 digits starting with "22" (e.g., 2212345). Please use Manual Entry instead.`);
+        setTimeout(() => setScanFeedback(""), 5000);
+        return;
+      }
+
       // Debouncing mechanism to prevent rapid scanning of the same code
       const currentTime = Date.now();
       if (currentTime - lastScannedTime < SCAN_DEBOUNCE_TIME && recentlyScanned.has(admissionNumber)) {
@@ -317,6 +326,9 @@ export default function MarkAttendance({
     try {
       // Clean and normalize the admission number
       const admissionNumber = manualInput.trim().toUpperCase();
+      
+      // Note: Manual entry allows any format since it's for cases where format validation fails
+      // This gives users flexibility to enter admission numbers that don't follow the standard format
       
       // Get current state to ensure we have the latest data
       const currentScanned = scannedAdmissions.map(item => item.admissionNumber.toUpperCase());
@@ -578,7 +590,7 @@ export default function MarkAttendance({
               {/* Scan Feedback */}
               {scanFeedback && (
                 <div className={`mb-6 p-4 rounded-lg border ${
-                  scanFeedback.includes("Error") || scanFeedback.includes("Failed")
+                  scanFeedback.includes("Error") || scanFeedback.includes("Failed") || scanFeedback.includes("Invalid admission number format")
                     ? "bg-red-50 border-red-200 text-red-800"
                     : scanFeedback.includes("already")
                     ? "bg-yellow-50 border-yellow-200 text-yellow-800"
@@ -586,7 +598,7 @@ export default function MarkAttendance({
                 }`}>
                   <div className="flex items-start gap-3">
                     <div className="text-lg shrink-0 mt-0.5">
-                      {scanFeedback.includes("Error") || scanFeedback.includes("Failed")
+                      {scanFeedback.includes("Error") || scanFeedback.includes("Failed") || scanFeedback.includes("Invalid admission number format")
                         ? "❌"
                         : scanFeedback.includes("already")
                         ? "⚠️"
