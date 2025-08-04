@@ -32,6 +32,7 @@ import ActivityLogs from "../components/ActivityLogs";
 import ToastContainer from "../components/ToastContainer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ProgressDialog from "../components/ProgressDialog";
+import PasswordSetupModal from "../components/PasswordSetupModal";
 
 // UI Component Primitives
 const Card = ({ children, className = "" }) => (
@@ -208,6 +209,9 @@ export default function Home() {
     progress: null,
   });
 
+  // Password setup dialog state
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+
   // Helper functions for dialogs
   const showConfirmDialog = (title, message, onConfirm, type = "warning") => {
     setConfirmDialog({ isOpen: true, title, message, onConfirm, type });
@@ -240,10 +244,23 @@ export default function Home() {
     setProgressDialog((prev) => ({ ...prev, progress }));
   };
 
+  const handlePasswordSetupComplete = () => {
+    setShowPasswordSetup(false);
+    showSuccess('Password authentication set up successfully! You can now use email/password to login.');
+  };
+
   // Reset to dashboard when user logs in
   useEffect(() => {
     if (user && userProfile && !loading) {
       setCurrentPage("dashboard");
+      // Check if user needs to set up password (first-time login or credential mismatch)
+      if (userProfile.isFirstLogin && !userProfile.hasPasswordAuth) {
+        setShowPasswordSetup(true);
+      } else if (userProfile.hasPasswordAuth && userProfile.isFirstLogin) {
+        // This indicates a credential mismatch - Firestore shows password auth is set up
+        // but user is still flagged as first login, suggesting credential linking failed
+        setShowPasswordSetup(true);
+      }
     }
   }, [user, userProfile, loading]);
 
@@ -1240,13 +1257,23 @@ export default function Home() {
             />
           )}
           {currentPage === "users" && userProfile?.role === "admin" && (
-            <UserManagementWithUI />
+            <UserManagementWithUI isXlsxScriptLoaded={isXlsxScriptLoaded} />
           )}
           {currentPage === "students" && userProfile?.role === "admin" && (
             <StudentManagementWithUI />
           )}
           {currentPage === "logs" && userProfile?.role === "admin" && (
             <ActivityLogsWithUI />
+          )}
+          {currentPage === "email-manager" && userProfile?.role === "admin" && (
+            <AdminEmailManager 
+              Card={Card}
+              CardHeader={CardHeader}
+              CardTitle={CardTitle}
+              CardDescription={CardDescription}
+              CardContent={CardContent}
+              Button={Button}
+            />
           )}
           {currentPage === "scanner" && selectedActivity && (
             <MarkAttendanceWithUI
@@ -1288,6 +1315,15 @@ export default function Home() {
         progress={progressDialog.progress}
         onCancel={hideProgressDialog}
         Button={Button}
+      />
+
+      {/* Password Setup Modal */}
+      <PasswordSetupModal
+        Button={Button}
+        isOpen={showPasswordSetup}
+        onComplete={handlePasswordSetupComplete}
+        userEmail={user?.email}
+        showReset={userProfile?.hasPasswordAuth && userProfile?.isFirstLogin}
       />
     </>
   );

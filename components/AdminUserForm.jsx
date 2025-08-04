@@ -5,11 +5,12 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
-  const { createAdmin } = useAuth();
+  const { addPreApprovedEmail } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
-    password: '',
-    name: ''
+    name: '',
+    role: 'placement_coordinator',
+    department: ''
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -20,9 +21,9 @@ const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
     setMessage('');
 
     try {
-      await createAdmin(formData.email, formData.password, formData.name);
-      setMessage('Admin user created successfully!');
-      setFormData({ email: '', password: '', name: '' });
+      await addPreApprovedEmail(formData.email, formData.name, formData.role, formData.department);
+      setMessage('User email pre-approved! They can now sign in with Google.');
+      setFormData({ email: '', name: '', role: 'placement_coordinator', department: '' });
       // Call success callback after a short delay to show success message
       setTimeout(() => {
         if (onSuccess) onSuccess();
@@ -43,6 +44,14 @@ const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
 
   return (
     <div className="w-full">
+      <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md">
+        <h3 className="font-medium text-blue-900 dark:text-blue-300 mb-2">Google Authentication System</h3>
+        <p className="text-sm text-blue-700 dark:text-blue-400">
+          Users will sign in with their Google accounts. You can pre-configure their roles and departments here, 
+          which will be applied when they first sign in.
+        </p>
+      </div>
+      
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="name" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
@@ -59,9 +68,10 @@ const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
             placeholder="Enter full name"
           />
         </div>
+        
         <div>
           <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-            Email
+            Google Email
           </label>
           <input
             type="email"
@@ -71,23 +81,39 @@ const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
             onChange={handleChange}
             required
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-            placeholder="Enter email address"
+            placeholder="Enter their Google email address"
           />
         </div>
+        
         <div>
-          <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-            Password
+          <label htmlFor="role" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+            Role
           </label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            value={formData.password}
+          <select
+            id="role"
+            name="role"
+            value={formData.role}
             onChange={handleChange}
             required
-            minLength={6}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-            placeholder="Enter password (min 6 characters)"
+          >
+            <option value="placement_coordinator">Placement Coordinator</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+        
+        <div>
+          <label htmlFor="department" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+            Department
+          </label>
+          <input
+            type="text"
+            id="department"
+            name="department"
+            value={formData.department}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            placeholder="Enter department (optional)"
           />
         </div>
         
@@ -116,7 +142,7 @@ const AdminUserForm = ({ Button, onSuccess, onCancel }) => {
             disabled={loading}
             className="flex-1"
           >
-            {loading ? 'Creating...' : 'Create Admin User'}
+            {loading ? 'Setting up...' : 'Setup User Profile'}
           </Button>
         </div>
       </form>

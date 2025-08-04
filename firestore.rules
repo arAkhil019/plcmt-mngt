@@ -28,15 +28,27 @@ service cloud.firestore {
         resource.data.isActive == true
       );
       
+      // Allow querying users by email for login validation (before authentication)
+      // This is needed for the loginWithEmailPassword function to check user existence
+      allow list: if true;
+      
       // Write permissions
-      allow create: if isAdmin() && 
-                    request.resource.data.keys().hasAll(['name', 'email', 'role', 'isActive', 'createdAt']) &&
-                    request.resource.data.createdAt == request.time;
+      allow create: if (
+        // Admin can create any user
+        isAdmin() ||
+        // Allow self-registration for the specific admin email
+        (userId == request.auth.uid && 
+         request.auth.token.email == 'cbitplacementtraker@gmail.com') ||
+        // Allow self-registration for any authenticated user (they'll get coordinator role by default)
+        (userId == request.auth.uid && isAuthenticated())
+      ) && 
+      request.resource.data.keys().hasAll(['name', 'email', 'role', 'isActive', 'createdAt']) &&
+      request.resource.data.createdAt == request.time;
       
       allow update: if isAdmin() || 
                     (userId == request.auth.uid && 
-                     // Users can only update their own name and lastLogin, not role or isActive
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'lastLogin']));
+                     // Users can update their own name, lastLogin, and password setup related fields
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'lastLogin', 'hasPasswordAuth', 'passwordSetupDate', 'isFirstLogin']));
       
       allow delete: if isAdmin();
     }
@@ -84,12 +96,33 @@ service cloud.firestore {
       allow create: if isAuthenticated() && 
                     request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'action', 'description', 'timestamp']) &&
                     request.resource.data.userId == request.auth.uid &&
-                    request.resource.data.timestamp == request.time;
+                    request.resource.data.timestamp == request.time &&
+                    // Allow additional optional fields for enhanced logging
+                    request.resource.data.keys().hasOnly(['userId', 'userName', 'userEmail', 'action', 'description', 'timestamp', 'metadata', 'ipAddress', 'userAgent', 'clientTimezone']);
       
       // Update permissions - logs are immutable for audit purposes
       allow update: if false;
       
       // Delete permissions - only admin for emergency cleanup
+      allow delete: if isAdmin();
+    }
+
+    // Pre-approved Users collection
+    match /preApprovedUsers/{emailId} {
+      // Read permissions - allow authenticated users to read pre-approval collection
+      // Since we can't easily replicate complex string replacement in rules,
+      // we'll allow broader read access for authenticated users to check pre-approval
+      allow read: if isAuthenticated();
+      
+      // Create permissions - only admin can add pre-approved emails
+      allow create: if isAdmin() && 
+                    request.resource.data.keys().hasAll(['email', 'addedAt', 'addedBy']) &&
+                    request.resource.data.addedAt == request.time;
+      
+      // Update permissions - only admin can update pre-approved emails
+      allow update: if isAdmin();
+      
+      // Delete permissions - only admin can remove pre-approved emails
       allow delete: if isAdmin();
     }
 
