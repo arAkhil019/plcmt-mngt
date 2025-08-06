@@ -1,5 +1,6 @@
 // components/StudentImportModal.jsx
 import React, { useState, useEffect } from 'react';
+import { GraduationCapIcon } from './icons';
 
 export default function StudentImportModal({ 
   isOpen, 
@@ -177,8 +178,9 @@ export default function StudentImportModal({
                       <CardContent className="space-y-4">
                         {/* Sheet will be used as department name: {sheetName} */}
                         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md">
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
-                            📋 Department: <strong>{sheetName}</strong>
+                          <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center">
+                            <GraduationCapIcon className="h-4 w-4 mr-2" />
+                            Department: <strong className="ml-1">{sheetName}</strong>
                           </p>
                         </div>
 

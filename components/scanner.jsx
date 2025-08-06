@@ -1,6 +1,6 @@
 // components/scanner.jsx
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowLeftIcon, CheckCircleIcon, ClockIcon, QrCodeIcon, UsersIcon } from "./icons";
+import { ArrowLeftIcon, CheckCircleIcon, ClockIcon, QrCodeIcon, UsersIcon, CheckIcon, AlertCircleIcon } from "./icons";
 
 export default function BarcodeScannerPage({
   company: activity,
@@ -162,7 +162,7 @@ export default function BarcodeScannerPage({
                   )}
                 </CardTitle>
                 <CardDescription className="text-primary-foreground/80 leading-relaxed">
-                  {activity.companyName || activity.name} • {isScanning ? "Scanning in progress" : "Scan student ID QR codes to mark attendance"}
+                  {activity.activityName || activity.name} • {isScanning ? "Scanning in progress" : "Scan student ID QR codes to mark attendance"}
                 </CardDescription>
               </div>
               <Button
@@ -199,7 +199,7 @@ export default function BarcodeScannerPage({
               {error && (
                 <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                   <div className="flex items-start gap-3 text-destructive">
-                    <div className="text-lg shrink-0 mt-0.5">⚠️</div>
+                    <AlertCircleIcon className="h-5 w-5 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <p className="leading-relaxed">{error}</p>
                     </div>
@@ -211,7 +211,7 @@ export default function BarcodeScannerPage({
               {scanFeedback && (
                 <div className="mb-6 p-4 rounded-lg border bg-green-50 border-green-200 text-green-800">
                   <div className="flex items-start gap-3">
-                    <div className="text-lg shrink-0 mt-0.5">✅</div>
+                    <CheckIcon className="h-5 w-5 shrink-0 mt-0.5 text-green-600" />
                     <div className="min-w-0">
                       <p className="leading-relaxed font-medium">{scanFeedback}</p>
                     </div>
@@ -272,7 +272,7 @@ export default function BarcodeScannerPage({
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-lg font-semibold mb-2">Attendance List</CardTitle>
                     <CardDescription className="leading-relaxed">
-                      Live attendance tracking for {activity.companyName || activity.name}
+                      Live attendance tracking for {activity.activityName || activity.name}
                     </CardDescription>
                   </div>
                 </div>

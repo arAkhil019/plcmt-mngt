@@ -11,6 +11,9 @@ import {
   ArrowLeftIcon,
   ClockIcon,
   StopIcon,
+  CheckIcon,
+  XIcon,
+  AlertCircleIcon,
 } from "./icons";
 
 export default function MarkAttendance({
@@ -527,7 +530,7 @@ export default function MarkAttendance({
                   Mark Attendance
                 </CardTitle>
                 <CardDescription className="text-primary-foreground/80 leading-relaxed">
-                  {activity.companyName || activity.name} • 
+                  {activity.activityName || activity.name} • 
                   {scannedAdmissions.length > 0 && ` ${scannedAdmissions.length} new scanned`}
                   {existingAdmissions.length > 0 && ` • ${existingAdmissions.length} previously saved`}
                   {scannedAdmissions.length === 0 && existingAdmissions.length === 0 && " Scan admission numbers and save them to activity"}
@@ -579,7 +582,7 @@ export default function MarkAttendance({
               {scannerError && (
                 <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                   <div className="flex items-start gap-3 text-destructive">
-                    <div className="text-lg shrink-0 mt-0.5">⚠️</div>
+                    <AlertCircleIcon className="h-5 w-5 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <p className="leading-relaxed">{scannerError}</p>
                     </div>
@@ -598,11 +601,13 @@ export default function MarkAttendance({
                 }`}>
                   <div className="flex items-start gap-3">
                     <div className="text-lg shrink-0 mt-0.5">
-                      {scanFeedback.includes("Error") || scanFeedback.includes("Failed") || scanFeedback.includes("Invalid admission number format")
-                        ? "❌"
-                        : scanFeedback.includes("already")
-                        ? "⚠️"
-                        : "✅"}
+                      {scanFeedback.includes("Error") || scanFeedback.includes("Failed") || scanFeedback.includes("Invalid admission number format") ? (
+                        <XIcon className="h-5 w-5 text-red-600" />
+                      ) : scanFeedback.includes("already") ? (
+                        <AlertCircleIcon className="h-5 w-5 text-yellow-600" />
+                      ) : (
+                        <CheckIcon className="h-5 w-5 text-green-600" />
+                      )}
                     </div>
                     <div className="min-w-0">
                       <p className="leading-relaxed font-medium">{scanFeedback}</p>

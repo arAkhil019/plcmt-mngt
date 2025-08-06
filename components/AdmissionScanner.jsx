@@ -7,6 +7,9 @@ import {
   EditIcon,
   TrashIcon,
   CheckCircleIcon,
+  CheckIcon,
+  XIcon,
+  AlertCircleIcon,
 } from "./icons";
 
 export default function AdmissionScanner({
@@ -495,7 +498,7 @@ export default function AdmissionScanner({
                   )}
                 </CardTitle>
                 <CardDescription className="text-primary-foreground/80 leading-relaxed text-xs sm:text-sm">
-                  <span className="hidden sm:inline">{activity.companyName || activity.name} • </span>
+                  <span className="hidden sm:inline">{activity.activityName || activity.name} • </span>
                   {isScanning
                     ? "Scanning in progress"
                     : "Scan or enter admission numbers"}
@@ -547,7 +550,7 @@ export default function AdmissionScanner({
                   {scannerError && (
                     <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                       <div className="flex items-start gap-3 text-destructive">
-                        <div className="text-lg shrink-0 mt-0.5">⚠️</div>
+                        <AlertCircleIcon className="h-5 w-5 shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <p className="leading-relaxed">{scannerError}</p>
                         </div>
@@ -567,12 +570,14 @@ export default function AdmissionScanner({
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-lg shrink-0 mt-0.5">
-                          {scanFeedback.includes("Already scanned")
-                            ? "⚠️"
-                            : scanFeedback.includes("Error") ||
-                              scanFeedback.includes("Failed")
-                            ? "❌"
-                            : "✅"}
+                          {scanFeedback.includes("Already scanned") ? (
+                            <AlertCircleIcon className="h-5 w-5 text-yellow-600" />
+                          ) : scanFeedback.includes("Error") ||
+                            scanFeedback.includes("Failed") ? (
+                            <XIcon className="h-5 w-5 text-red-600" />
+                          ) : (
+                            <CheckIcon className="h-5 w-5 text-green-600" />
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="leading-relaxed font-medium">
@@ -642,7 +647,7 @@ export default function AdmissionScanner({
                   {scannerError && (
                     <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                       <div className="flex items-start gap-3 text-destructive">
-                        <div className="text-lg shrink-0 mt-0.5">⚠️</div>
+                        <AlertCircleIcon className="h-5 w-5 shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <p className="leading-relaxed">{scannerError}</p>
                         </div>
@@ -729,12 +734,14 @@ export default function AdmissionScanner({
                     >
                       <div className="flex items-center gap-2">
                         <div className="text-sm shrink-0">
-                          {scanFeedback.includes("Already scanned")
-                            ? "⚠️"
-                            : scanFeedback.includes("Error") ||
-                              scanFeedback.includes("Failed")
-                            ? "❌"
-                            : "✅"}
+                          {scanFeedback.includes("Already scanned") ? (
+                            <AlertCircleIcon className="h-4 w-4 text-yellow-600" />
+                          ) : scanFeedback.includes("Error") ||
+                            scanFeedback.includes("Failed") ? (
+                            <XIcon className="h-4 w-4 text-red-600" />
+                          ) : (
+                            <CheckIcon className="h-4 w-4 text-green-600" />
+                          )}
                         </div>
                         <p className="text-sm font-medium">{scanFeedback}</p>
                       </div>

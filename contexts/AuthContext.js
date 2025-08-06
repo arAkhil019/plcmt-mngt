@@ -4,8 +4,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   onAuthStateChanged,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -32,24 +31,12 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState(null); // Add auth error state
 
   useEffect(() => {
-    // Check for redirect result first
-    const checkRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result) {
-          console.log('User logged in with Google via redirect:', result.user.email);
-        }
-      } catch (error) {
-        console.error('Error handling redirect result:', error);
-      }
-    };
-
-    checkRedirectResult();
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
+      setAuthError(null); // Clear previous errors
       
       if (user) {
         try {
@@ -61,9 +48,7 @@ export const AuthProvider = ({ children }) => {
             setUser(user);
             setIsAuthenticated(true);
           } else {
-            // User exists in Auth but not in Firestore
             // Check if this user is pre-approved before creating profile
-            console.log('Checking pre-approval for new user:', user.email);
             
             // Check if this user is pre-approved
             const preApprovedData = await checkPreApprovedEmail(user.email);
@@ -73,12 +58,13 @@ export const AuthProvider = ({ children }) => {
             
             if (!isAdminEmail && !preApprovedData) {
               // User is not pre-approved, sign them out
-              console.log('User not pre-approved:', user.email);
               await signOut(auth);
               setUser(null);
               setUserProfile(null);
               setIsAuthenticated(false);
-              throw new Error('Your email is not pre-approved for access. Please contact the administrator.');
+              setAuthError('Your email is not pre-approved for access. Please contact the administrator.');
+              setLoading(false);
+              return; // Exit early to prevent further processing
             }
             
             // Create profile for pre-approved user
@@ -106,21 +92,23 @@ export const AuthProvider = ({ children }) => {
             setUser(user);
             setIsAuthenticated(true);
             
-            console.log('Profile created for pre-approved user:', user.email);
+            // Profile creation completed
           }
         } catch (error) {
           console.error('Error fetching/creating user profile:', error);
-          // If there's an error, sign out the user
+          // If there's an error, sign out the user and set error state
           await signOut(auth);
           setUser(null);
           setUserProfile(null);
           setIsAuthenticated(false);
+          setAuthError(error.message || 'Authentication failed. Please try again.');
         }
       } else {
         // User is signed out
         setUser(null);
         setUserProfile(null);
         setIsAuthenticated(false);
+        setAuthError(null); // Clear any previous errors on sign out
       }
       
       setLoading(false);
@@ -132,13 +120,57 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = async () => {
     try {
       setLoading(true);
+      setAuthError(null); // Clear any previous errors
       
-      // Use redirect instead of popup to avoid Cross-Origin-Opener-Policy issues
-      await signInWithRedirect(auth, googleProvider);
-      // The redirect will handle the authentication
-      // onAuthStateChanged will be called when the user returns
+      const loginStartTime = Date.now();
+      
+      // Use popup instead of redirect for better user experience
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      // Log successful Google login with detailed metadata
+      if (user) {
+        const loginData = {
+          loginMethod: 'google',
+          loginAttempts: 1,
+          successOnAttempt: 1,
+          previousLoginTime: userProfile?.lastLogin || null,
+          redirectUrl: window.location.pathname,
+          preApprovalStatus: 'approved', // Will be validated in auth state listener
+          loginDuration: Date.now() - loginStartTime
+        };
+        
+        await activityLogsService.logDetailedLogin(
+          user.uid,
+          user.displayName || user.email.split('@')[0],
+          user.email,
+          loginData
+        );
+      }
+      
+      // The onAuthStateChanged will handle the rest including pre-approval check
+      // No need to check pre-approval here as it's handled in the auth state listener
+      
     } catch (error) {
       setLoading(false);
+      
+      // Log failed login attempt if we have user context
+      if (auth.currentUser || error.user) {
+        const errorUser = auth.currentUser || error.user;
+        await activityLogsService.logActivity(
+          errorUser?.uid || 'unknown',
+          errorUser?.displayName || errorUser?.email?.split('@')[0] || 'Unknown',
+          errorUser?.email || 'unknown@email.com',
+          ACTIVITY_LOG_TYPES.LOGIN_FAILED,
+          `Google sign-in failed: ${error.message}`,
+          { 
+            loginMethod: 'google',
+            errorCode: error.code,
+            errorMessage: error.message,
+            timestamp: new Date().toISOString()
+          }
+        );
+      }
       
       // Handle specific Google Auth errors
       if (error.code === 'auth/popup-closed-by-user') {
@@ -151,62 +183,114 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Google Sign-In is not enabled. Please contact the administrator.');
       }
       
-      throw error;
+      throw new Error(`Google sign-in failed: ${error.message}`);
     }
-  };  const loginWithEmailPassword = async (email, password) => {
+  };
+
+  // Function to clear auth errors
+  const clearAuthError = () => {
+    setAuthError(null);
+  };
+
+  const loginWithEmailPassword = async (email, password) => {
     try {
       setLoading(true);
       
-      // Check if user exists and has password authentication enabled
-      const usersQuery = query(collection(db, 'users'), where('email', '==', email));
-      const querySnapshot = await getDocs(usersQuery);
-      
-      if (querySnapshot.empty) {
-        throw new Error('No account found with this email address.');
-      }
-      
-      const userDocData = querySnapshot.docs[0].data();
-      console.log('User document data:', userDocData);
-      
-      if (!userDocData.hasPasswordAuth) {
-        throw new Error('This email is not set up for password authentication. Please sign in with Google and set up a password first.');
-      }
-      
+      // First, try to authenticate with Firebase Auth
       let result;
       try {
-        console.log('Attempting to sign in with email/password for:', email);
         result = await signInWithEmailAndPassword(auth, email, password);
-        console.log('Sign in successful. User providers:', result.user.providerData.map(p => p.providerId));
       } catch (authError) {
-        console.error('Authentication error:', authError);
+        console.error('Firebase Auth error:', authError);
         if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/user-not-found') {
-          // The user exists in Firestore but not in Firebase Auth with email/password
-          throw new Error('Your password authentication is not properly set up. Please sign in with Google and reset your password in settings.');
+          throw new Error('Invalid email or password. Please check your credentials and try again.');
         } else if (authError.code === 'auth/wrong-password') {
           throw new Error('Incorrect password. Please try again.');
         } else if (authError.code === 'auth/too-many-requests') {
           throw new Error('Too many failed attempts. Please try again later.');
+        } else if (authError.code === 'auth/user-disabled') {
+          throw new Error('This account has been disabled. Please contact the administrator.');
         }
         throw new Error(`Authentication failed: ${authError.message}`);
       }
       
-      // Update last login timestamp
-      await updateDoc(doc(db, 'users', result.user.uid), {
-        lastLogin: serverTimestamp()
-      });
+      // Check if user exists in Firestore, if not create profile
+      const userDocRef = doc(db, 'users', result.user.uid);
+      const userDoc = await getDoc(userDocRef);
       
-      // Log the login activity - re-enabled
-      await activityLogsService.logActivity(
-        result.user.uid,
-        userDocData.name,
-        userDocData.email,
-        ACTIVITY_LOG_TYPES.LOGIN,
-        `User logged in successfully via email/password`,
-        { 
-          loginMethod: 'email-password',
-          userRole: userDocData.role 
+      if (!userDoc.exists()) {
+        // Check if this user is pre-approved
+        const preApprovedData = await checkPreApprovedEmail(email);
+        const isAdminEmail = email === 'cbitplacementtraker@gmail.com';
+        
+        if (!isAdminEmail && !preApprovedData) {
+          // User is not pre-approved, sign them out
+          await signOut(auth);
+          throw new Error('Your email is not pre-approved for access. Please contact the administrator.');
         }
-      );
+        
+        // Create profile for pre-approved user
+        const userData = {
+          name: preApprovedData?.name || result.user.displayName || result.user.email.split('@')[0],
+          email: result.user.email,
+          photoURL: result.user.photoURL || null,
+          role: isAdminEmail ? 'admin' : (preApprovedData?.role || 'placement_coordinator'),
+          department: preApprovedData?.department || '',
+          isActive: true,
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
+          authProvider: 'email-password',
+          hasPasswordAuth: true, // User logged in with email/password so they have it
+          isPreApproved: true,
+          isFirstLogin: false // Since they're logging in with email/password, they've set it up
+        };
+        
+        await setDoc(userDocRef, userData);
+        
+        // Log the account creation with detailed metadata
+        const loginData = {
+          loginMethod: 'email-password',
+          loginAttempts: 1,
+          successOnAttempt: 1,
+          isNewProfile: true,
+          userRole: userData.role,
+          preApprovalStatus: 'approved',
+          accountType: 'first_time_setup'
+        };
+        
+        await activityLogsService.logDetailedLogin(
+          result.user.uid,
+          userData.name,
+          userData.email,
+          loginData
+        );
+      } else {
+        // User exists in Firestore, update last login and hasPasswordAuth flag
+        const userData = userDoc.data();
+        await updateDoc(userDocRef, {
+          lastLogin: serverTimestamp(),
+          hasPasswordAuth: true, // Ensure this is set since they successfully logged in with password
+          authProvider: 'email-password' // Update auth provider if it was previously google-only
+        });
+        
+        // Log the login activity with detailed metadata
+        const loginData = {
+          loginMethod: 'email-password',
+          loginAttempts: 1, // Would need to track actual attempts in a real scenario
+          successOnAttempt: 1,
+          previousLoginTime: userData.lastLogin?.toDate?.()?.toISOString() || null,
+          userRole: userData.role,
+          preApprovalStatus: 'approved',
+          accountType: 'existing_user'
+        };
+        
+        await activityLogsService.logDetailedLogin(
+          result.user.uid,
+          userData.name,
+          userData.email,
+          loginData
+        );
+      }
       
       return result;
     } catch (error) {
@@ -241,17 +325,12 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Password authentication is already set up for this account.');
       }
       
-      console.log('Setting up password for user:', user.email);
-      console.log('Current providers:', user.providerData.map(p => p.providerId));
-      
       // Link email/password credential to the existing Google account
       const credential = EmailAuthProvider.credential(user.email, password);
       
       try {
         // Link the email/password credential to the current user
         const linkResult = await linkWithCredential(user, credential);
-        console.log('Email/password credential linked successfully');
-        console.log('New providers:', linkResult.user.providerData.map(p => p.providerId));
       } catch (linkError) {
         console.error('Error linking credential:', linkError);
         if (linkError.code === 'auth/credential-already-in-use') {
@@ -299,7 +378,6 @@ export const AuthProvider = ({ children }) => {
 
   const checkUserProviders = () => {
     if (!user) {
-      console.log('No user logged in');
       return [];
     }
     
@@ -309,7 +387,6 @@ export const AuthProvider = ({ children }) => {
       displayName: provider.displayName
     }));
     
-    console.log('Current user providers:', providers);
     return providers;
   };
 
@@ -344,17 +421,31 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
       
-      // Log the logout activity before signing out
+      // Calculate session duration and gather logout data
+      const logoutTime = new Date();
+      const loginTime = userProfile?.lastLogin?.toDate?.() || null;
+      const sessionDuration = loginTime ? logoutTime.getTime() - loginTime.getTime() : null;
+      
+      // Log the logout activity with detailed metadata before signing out
       if (user && userProfile) {
-        await activityLogsService.logActivity(
+        const logoutData = {
+          logoutReason: 'manual',
+          sessionDuration: sessionDuration,
+          loginTime: loginTime?.toISOString() || null,
+          logoutTime: logoutTime.toISOString(),
+          activitiesPerformed: [], // Could be enhanced to track user actions during session
+          pagesVisited: [window.location.pathname], // Could be enhanced to track navigation
+          dataModified: false, // Could be enhanced to track if user made changes
+          unsavedChanges: false,
+          logoutMethod: 'button',
+          userRole: userProfile.role
+        };
+        
+        await activityLogsService.logDetailedLogout(
           user.uid,
           userProfile.name,
           userProfile.email,
-          ACTIVITY_LOG_TYPES.LOGOUT,
-          `User logged out successfully`,
-          { 
-            userRole: userProfile.role 
-          }
+          logoutData
         );
       }
       
@@ -442,12 +533,79 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Function to create account directly with email/password (for pre-approved users)
+  const createAccountWithEmailPassword = async (email, password, userData = {}) => {
+    try {
+      setLoading(true);
+      
+      // Check if this email is pre-approved or is admin email
+      const isAdminEmail = email === 'cbitplacementtraker@gmail.com';
+      const preApprovedData = await checkPreApprovedEmail(email);
+      
+      if (!isAdminEmail && !preApprovedData) {
+        throw new Error('Your email is not pre-approved for account creation. Please contact the administrator.');
+      }
+      
+      // Create Firebase Auth account
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Create user profile in Firestore
+      const userProfileData = {
+        name: userData.name || preApprovedData?.name || result.user.email.split('@')[0],
+        email: result.user.email,
+        photoURL: userData.photoURL || null,
+        role: isAdminEmail ? 'admin' : (userData.role || preApprovedData?.role || 'placement_coordinator'),
+        department: userData.department || preApprovedData?.department || '',
+        isActive: true,
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp(),
+        authProvider: 'email-password',
+        hasPasswordAuth: true,
+        isPreApproved: true,
+        isFirstLogin: false
+      };
+      
+      await setDoc(doc(db, 'users', result.user.uid), userProfileData);
+      
+      // Log the account creation
+      await activityLogsService.logActivity(
+        result.user.uid,
+        userProfileData.name,
+        userProfileData.email,
+        ACTIVITY_LOG_TYPES.LOGIN,
+        `New account created via email/password`,
+        { 
+          loginMethod: 'email-password',
+          userRole: userProfileData.role,
+          isNewAccount: true
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      setLoading(false);
+      
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('An account with this email already exists. Please try signing in instead.');
+      } else if (error.code === 'auth/weak-password') {
+        throw new Error('Password is too weak. Please choose a stronger password (at least 6 characters).');
+      } else if (error.code === 'auth/invalid-email') {
+        throw new Error('Invalid email address.');
+      }
+      
+      throw error;
+    }
+  };
+
   const value = {
     user,
     userProfile,
     isAuthenticated,
+    authError,
+    clearAuthError,
     loginWithGoogle,
     loginWithEmailPassword,
+    createAccountWithEmailPassword,
     setupPasswordAuth,
     checkUserProviders,
     resetPasswordAuth,

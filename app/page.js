@@ -9,6 +9,7 @@ import {
   ActivityIcon,
   LogOutIcon,
   MenuIcon,
+  BuildingIcon,
 } from "../components/icons";
 import { useAuth } from "../contexts/AuthContext";
 import { logActivity, ACTIVITY_TYPES } from "../utils/activityLogger";
@@ -28,7 +29,8 @@ import EditActivityModal from "../components/EditActivityModal";
 import LoginForm from "../components/LoginForm";
 import UserManagement from "../components/UserManagement";
 import StudentManagement from "../components/StudentManagement";
-import ActivityLogs from "../components/ActivityLogs";
+import ActivityLogsAdmin from "../components/ActivityLogsAdmin";
+import AdminCompanyManager from "../components/admin-company-manager";
 import ToastContainer from "../components/ToastContainer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ProgressDialog from "../components/ProgressDialog";
@@ -374,8 +376,8 @@ export default function Home() {
 
   const handleUpdateActivity = async (updatedActivity, uploadedFile) => {
     // First, validate that all required fields are filled
-    if (!updatedActivity.companyName.trim() || !updatedActivity.date) {
-      showError("Please enter a company name and select a date.");
+    if (!updatedActivity.company?.trim() || !updatedActivity.activityName?.trim() || !updatedActivity.date) {
+      showError("Please enter a company name, activity name, and select a date.");
       return;
     }
 
@@ -408,8 +410,8 @@ export default function Home() {
         };
         reader.readAsArrayBuffer(uploadedFile);
       } else {
-        // Update activity without student data change
-        const updated = await unifiedActivitiesService.updateActivity(
+        // Update activity with company management
+        const updated = await unifiedActivitiesService.updateActivityWithCompanyManagement(
           updatedActivity.id,
           updatedActivity,
           { id: userProfile?.id, name: userProfile?.name }
@@ -423,16 +425,17 @@ export default function Home() {
           userProfile?.id,
           userProfile?.name,
           userProfile?.email,
+
           ACTIVITY_LOG_TYPES.UPDATE_ACTIVITY,
-          `Updated activity: ${updated.companyName} - ${updated.activityType}`,
+          `Updated activity: ${updated.activityName} (${updated.company}) - ${updated.activityType}`,
           {
-            activityId: updated.id,
-            companyName: updated.companyName,
-            activityType: updated.activityType,
+            activityName: updated.activityName,
+            company: updated.company,
           }
         );
+
+        setEditActivityModal({ isOpen: false, activity: null });
       }
-      setEditActivityModal({ isOpen: false, activity: null });
     } catch (error) {
       showError("Failed to update activity. Please try again.");
     }
@@ -445,8 +448,8 @@ export default function Home() {
     }
 
     try {
-      // Delete the activity using unified service
-      const result = await unifiedActivitiesService.deleteActivity(
+      // Delete the activity using unified service with company management
+      const result = await unifiedActivitiesService.deleteActivityWithCompanyManagement(
         activity.id,
         userProfile
       );
@@ -461,12 +464,13 @@ export default function Home() {
         userProfile?.name,
         userProfile?.email,
         ACTIVITY_LOG_TYPES.DELETE_ACTIVITY,
-        `Deleted activity: ${activity.companyName || activity.name} - ${
+        `Deleted activity: ${activity.activityName || activity.name} (${activity.company || 'Unknown Company'}) - ${
           activity.activityType || "Activity"
         }`,
         {
           activityId: activity.id,
-          companyName: activity.companyName || activity.name,
+          activityName: activity.activityName || activity.name,
+          company: activity.company,
           activityType: activity.activityType || "Activity",
           deletedParticipationRecords: result?.deletedParticipationRecords || 0,
         }
@@ -474,7 +478,7 @@ export default function Home() {
 
       showSuccess(
         `Activity "${
-          activity.companyName || activity.name
+          activity.activityName || activity.name
         }" deleted successfully.${
           result?.deletedParticipationRecords 
             ? ` ${result.deletedParticipationRecords} participation records were also removed.`
@@ -497,7 +501,7 @@ export default function Home() {
     showConfirmDialog(
       "Change Activity Status",
       `Are you sure you want to change "${
-        activity.companyName || activity.name
+        activity.activityName || activity.name
       }" status to "${newStatus}"?`,
       async () => {
         try {
@@ -509,24 +513,28 @@ export default function Home() {
             { id: userProfile?.id, name: userProfile?.name }
           );
 
-          // Reload activities from Firestore to get the updated state
-          await reloadActivities();
+          // Note: Don't call reloadActivities() here as it causes multiple refreshes
+          // The dashboard component will handle its own optimized refresh
+          // The unifiedActivitiesService.updateActivity already triggers company recalibration
 
-          // Log the status change
-          await activityLogsService.logActivity(
+          // Log the status change with detailed lifecycle information
+          await activityLogsService.logActivityLifecycle(
             userProfile?.id,
             userProfile?.name,
             userProfile?.email,
-            ACTIVITY_LOG_TYPES.CHANGE_ACTIVITY_STATUS,
-            `Changed activity status: ${
-              activity.companyName || activity.name
-            } from "${activity.status}" to "${newStatus}"`,
             {
               activityId: activity.id,
-              companyName: activity.companyName || activity.name,
-              activityType: activity.activityType || "Activity",
-              oldStatus: activity.status,
+              activityName: activity.activityName || activity.name,
+              companyId: activity.id,
+              companyName: activity.company,
+              actionType: 'status_change',
+              previousStatus: activity.status,
               newStatus: newStatus,
+              changedFields: ['status'],
+              previousValues: { status: activity.status },
+              newValues: { status: newStatus },
+              approvalRequired: false,
+              reason: `Manual status change from ${activity.status} to ${newStatus}`
             }
           );
 
@@ -588,6 +596,25 @@ export default function Home() {
         
         if (alreadyScanned) {
           showWarning(`Admission number ${studentId} has already been scanned.`);
+          
+          // Log duplicate scan attempt
+          await activityLogsService.logAdmissionScanning(
+            userProfile?.id || 'unknown',
+            userProfile?.name || 'Unknown User',
+            userProfile?.email || 'unknown@email.com',
+            {
+              admissionNumber: studentId,
+              companyId: activity.id,
+              companyName: activity.company,
+              activityId: activity.id,
+              activityName: activity.activityName,
+              scanMethod: 'qr', // Assuming QR code scanning
+              scanResult: 'duplicate',
+              previouslyScanned: true,
+              scanDuration: null
+            }
+          );
+          
           return;
         }
 
@@ -606,6 +633,25 @@ export default function Home() {
           activity.id,
           { scannedAdmissions: updatedScannedAdmissions },
           userProfile
+        );
+
+        // Log successful admission scanning
+        await activityLogsService.logAdmissionScanning(
+          userProfile?.id || 'unknown',
+          userProfile?.name || 'Unknown User',
+          userProfile?.email || 'unknown@email.com',
+          {
+            admissionNumber: studentId,
+            studentName: 'Unknown', // Could be enhanced to lookup student name
+            companyId: activity.id,
+            companyName: activity.company,
+            activityId: activity.id,
+            activityName: activity.activityName,
+            scanMethod: 'qr',
+            scanResult: 'success',
+            previouslyScanned: false,
+            scanDuration: null // Could be enhanced to track scan time
+          }
         );
 
         // Reload activities to reflect changes
@@ -635,8 +681,8 @@ export default function Home() {
       return;
     }
     // First, validate that all required fields are filled
-    if (!newActivity.companyName.trim() || !newActivity.date) {
-      showError("Please enter a company name and select a date.");
+    if (!newActivity.company?.trim() || !newActivity.activityName?.trim() || !newActivity.date) {
+      showError("Please enter a company name, activity name, and select a date.");
       return;
     }
 
@@ -657,7 +703,8 @@ export default function Home() {
 
             // Clean the activity data before processing
             const cleanActivityData = {
-              companyName: newActivity.companyName.trim(),
+              company: newActivity.company.trim(),
+              activityName: newActivity.activityName.trim(),
               activityType: newActivity.activityType,
               interviewRound: newActivity.interviewRound || 1,
               date: newActivity.date,
@@ -672,9 +719,8 @@ export default function Home() {
             };
 
             // Generate a temporary activity ID for the column mapping process
-            const tempActivityId = `temp_${Date.now()}_${Math.random()
-              .toString(36)
-              .substr(2, 9)}`;
+            // This is safe since it only runs on user interaction, not during render
+            const tempActivityId = `temp_activity_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 
             setColMapModalData({
               isOpen: true,
@@ -693,7 +739,8 @@ export default function Home() {
       } else {
         // For activities without files, create directly using the old system
         const cleanActivityData = {
-          companyName: newActivity.companyName.trim(),
+          company: newActivity.company.trim(),
+          activityName: newActivity.activityName.trim(),
           activityType: newActivity.activityType,
           interviewRound: newActivity.interviewRound || 1,
           date: newActivity.date,
@@ -716,17 +763,30 @@ export default function Home() {
         // Reload activities to get the updated list
         await reloadActivities();
 
-        // Log the activity creation
-        await activityLogsService.logActivity(
+        // Log the activity creation with detailed lifecycle information
+        await activityLogsService.logActivityLifecycle(
           userProfile?.id,
           userProfile?.name,
           userProfile?.email,
-          ACTIVITY_LOG_TYPES.CREATE_ACTIVITY,
-          `Created activity: ${createdActivity.companyName} - ${createdActivity.activityType}`,
           {
             activityId: createdActivity.id,
-            companyName: createdActivity.companyName,
-            activityType: createdActivity.activityType,
+            activityName: createdActivity.activityName,
+            companyId: createdActivity.id, // In this system, activity ID serves as company reference
+            companyName: createdActivity.company,
+            actionType: 'create',
+            newStatus: createdActivity.status || 'Active',
+            changedFields: ['activityName', 'company', 'activityType', 'date', 'time', 'venue', 'status'],
+            newValues: {
+              activityName: createdActivity.activityName,
+              company: createdActivity.company,
+              activityType: createdActivity.activityType,
+              date: createdActivity.date,
+              time: createdActivity.time,
+              venue: createdActivity.venue,
+              status: createdActivity.status || 'Active'
+            },
+            approvalRequired: false,
+            reason: 'New activity creation'
           }
         );
       }
@@ -813,7 +873,7 @@ export default function Home() {
           // Don't generate another temporary ID here
           activityDetails = {
             // Don't set an ID here - let the service create it properly
-            name: newActivity.companyName,
+            name: newActivity.activityName,
             date: newActivity.date,
             ...newActivity, // Include all the activity data
           };
@@ -821,7 +881,7 @@ export default function Home() {
           // For existing activities, provide minimal activity details for processing
           activityDetails = {
             id: activityId, // Use the Firestore document ID
-            name: updatedActivity?.companyName || `Activity_${activityId}`,
+            name: updatedActivity?.activityName || `Activity_${activityId}`,
             date:
               updatedActivity?.date || new Date().toISOString().split("T")[0],
           };
@@ -909,7 +969,7 @@ export default function Home() {
             // Show detailed success message
             hideProgressDialog();
             showSuccess(
-              `✅ Successfully processed participants for ${activityDetails.companyName}:\n` +
+              `✅ Successfully processed participants for ${activityDetails.activityName} (${activityDetails.company}):\n` +
               `• ${result.added} new students added\n` +
               `• ${result.updated} existing students updated\n` +
               `• ${result.duplicates} duplicates skipped\n` +
@@ -989,7 +1049,7 @@ export default function Home() {
     <StudentManagement {...props} uiComponents={uiComponents} />
   );
   const ActivityLogsWithUI = (props) => (
-    <ActivityLogs {...props} {...uiComponents} />
+    <ActivityLogsAdmin {...props} />
   );
 
   const handleLogout = async () => {
@@ -1113,6 +1173,19 @@ export default function Home() {
                       🎓 Students
                     </Button>
                     <Button
+                      variant={
+                        currentPage === "companies" ? "default" : "outline"
+                      }
+                      onClick={() => {
+                        setCurrentPage("companies");
+                        setSelectedActivity(null);
+                      }}
+                      size="sm"
+                    >
+                      <BuildingIcon className="h-4 w-4 mr-2" />
+                      Companies
+                    </Button>
+                    <Button
                       variant={currentPage === "logs" ? "default" : "outline"}
                       onClick={() => {
                         setCurrentPage("logs");
@@ -1206,6 +1279,21 @@ export default function Home() {
                       🎓 Students
                     </Button>
                     <Button
+                      variant={
+                        currentPage === "companies" ? "default" : "outline"
+                      }
+                      onClick={() => {
+                        setCurrentPage("companies");
+                        setSelectedActivity(null);
+                        setMobileMenuOpen(false);
+                      }}
+                      size="sm"
+                      className="justify-start"
+                    >
+                      <BuildingIcon className="h-4 w-4 mr-2" />
+                      Companies
+                    </Button>
+                    <Button
                       variant={currentPage === "logs" ? "default" : "outline"}
                       onClick={() => {
                         setCurrentPage("logs");
@@ -1261,6 +1349,17 @@ export default function Home() {
           )}
           {currentPage === "students" && userProfile?.role === "admin" && (
             <StudentManagementWithUI />
+          )}
+          {currentPage === "companies" && userProfile?.role === "admin" && (
+            <AdminCompanyManager
+              Card={Card}
+              CardHeader={CardHeader}
+              CardTitle={CardTitle}
+              CardContent={CardContent}
+              Button={Button}
+              Badge={Badge}
+              userProfile={userProfile}
+            />
           )}
           {currentPage === "logs" && userProfile?.role === "admin" && (
             <ActivityLogsWithUI />

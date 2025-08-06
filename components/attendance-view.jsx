@@ -347,7 +347,7 @@ export default function AttendanceView({
                   View Attendance
                 </CardTitle>
                 <CardDescription className="text-primary-foreground/80 leading-relaxed">
-                  {activity.companyName || activity.name} •
+                  {activity.activityName || activity.name} •
                   {scannedAdmissions.length > 0 &&
                     ` ${scannedAdmissions.length} scanned admissions`}
                   {presentCount > 0 &&

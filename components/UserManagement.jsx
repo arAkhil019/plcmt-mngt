@@ -13,6 +13,7 @@ import {
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import AdminUserForm from "./AdminUserForm";
+import { MailIcon, ClipboardIcon } from "./icons";
 
 export default function UserManagement({
   Card,
@@ -423,7 +424,8 @@ export default function UserManagement({
               : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
           }`}
         >
-          📧 Pre-approved Emails
+          <MailIcon className="h-4 w-4 mr-2" />
+          Pre-approved Emails
         </button>
       </div>
 
@@ -440,7 +442,7 @@ export default function UserManagement({
                 disabled={!isXlsxScriptLoaded}
                 title={!isXlsxScriptLoaded ? "Loading Excel library..." : "Upload Excel file with user data"}
               >
-                <span className="mr-2">📋</span>
+                <ClipboardIcon className="h-4 w-4 mr-2" />
                 Bulk Upload Excel
                 {!isXlsxScriptLoaded && (
                   <div className="absolute -top-1 -right-1 h-3 w-3">

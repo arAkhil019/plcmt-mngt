@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { XIcon, CheckIcon, TrashIcon, UploadIcon } from "./icons";
 import { useAuth } from "../contexts/AuthContext";
+import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
 
 export default function EditActivityModal({
   isOpen,
@@ -22,7 +23,8 @@ export default function EditActivityModal({
 }) {
   const { userProfile } = useAuth();
   const [editedActivity, setEditedActivity] = useState({
-    companyName: "",
+    company: "",
+    activityName: "",
     activityType: "Pre-placement Talk",
     interviewRound: 1,
     date: "",
@@ -39,13 +41,17 @@ export default function EditActivityModal({
   });
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [availableCompanies, setAvailableCompanies] = useState([]);
+  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
+  const [filteredCompanies, setFilteredCompanies] = useState([]);
   const fileInputRef = useRef(null);
 
   // Initialize form with activity data when modal opens
   useEffect(() => {
     if (isOpen && activity) {
       setEditedActivity({
-        companyName: activity.companyName || "",
+        company: activity.company || "",
+        activityName: activity.activityName || "",
         activityType: activity.activityType || "Pre-placement Talk",
         interviewRound: activity.interviewRound || 1,
         date: activity.date || "",
@@ -56,8 +62,37 @@ export default function EditActivityModal({
         spocContact: activity.spocContact || "",
         status: activity.status || "Active",
       });
+      fetchAvailableCompanies();
     }
   }, [isOpen, activity]);
+
+  useEffect(() => {
+    // Filter companies based on input
+    if (editedActivity.company) {
+      const filtered = availableCompanies.filter(company =>
+        company.toLowerCase().includes(editedActivity.company.toLowerCase())
+      );
+      setFilteredCompanies(filtered);
+      setShowCompanyDropdown(filtered.length > 0 && editedActivity.company !== '');
+    } else {
+      setFilteredCompanies([]);
+      setShowCompanyDropdown(false);
+    }
+  }, [editedActivity.company, availableCompanies]);
+
+  const fetchAvailableCompanies = async () => {
+    try {
+      const companies = await unifiedActivitiesService.getAllCompanies();
+      setAvailableCompanies(companies);
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+    }
+  };
+
+  const handleCompanySelect = (company) => {
+    setEditedActivity(prev => ({ ...prev, company }));
+    setShowCompanyDropdown(false);
+  };
 
   if (!isOpen || !activity) return null;
 
@@ -122,7 +157,7 @@ export default function EditActivityModal({
     const participantCount =
       activity.totalParticipants || activity.eligibleDepartments?.length || 0;
     const confirmMessage = `Are you sure you want to delete "${
-      activity.companyName || activity.name
+      activity.activityName || activity.name
     }"? This will permanently remove the activity and all ${participantCount} participant records. This action cannot be undone.`;
     
     if (onShowConfirmDialog) {
@@ -190,32 +225,66 @@ export default function EditActivityModal({
               onChange={handleFileChange}
             />
 
-            {/* Row 1: Company & Activity Type */}
+            {/* Row 1: Company & Activity Name */}
             <div className="grid sm:grid-cols-2 gap-4">
-              <div>
+              <div className="relative">
                 <label className="text-sm font-medium">Company Name</label>
                 <input
                   type="text"
-                  name="companyName"
-                  value={editedActivity.companyName}
+                  name="company"
+                  value={editedActivity.company}
                   onChange={handleChange}
-                  placeholder="Enter company name"
+                  onFocus={() => setShowCompanyDropdown(filteredCompanies.length > 0)}
+                  placeholder="Enter or select company name"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+                />
+                
+                {/* Company Dropdown */}
+                {showCompanyDropdown && filteredCompanies.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {filteredCompanies.map((company, index) => (
+                      <div
+                        key={index}
+                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+                        onClick={() => handleCompanySelect(company)}
+                      >
+                        {company}
+                      </div>
+                    ))}
+                    {!filteredCompanies.includes(editedActivity.company) && editedActivity.company.trim() && (
+                      <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-600 text-sm text-blue-600 dark:text-blue-400">
+                        Update to "{editedActivity.company}"
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-sm font-medium">Activity Name</label>
+                <input
+                  type="text"
+                  name="activityName"
+                  value={editedActivity.activityName}
+                  onChange={handleChange}
+                  placeholder="e.g., Pre-placement Talk, Technical Round 1"
                   className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium">Activity Type</label>
-                <select
-                  name="activityType"
-                  value={editedActivity.activityType}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
-                >
-                  <option>Pre-placement Talk</option>
-                  <option>Online Assessment</option>
-                  <option>Interview Round</option>
-                </select>
-              </div>
+            </div>
+
+            {/* Row 2: Activity Type */}
+            <div>
+              <label className="text-sm font-medium">Activity Type</label>
+              <select
+                name="activityType"
+                value={editedActivity.activityType}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+              >
+                <option>Pre-placement Talk</option>
+                <option>Online Assessment</option>
+                <option>Interview Round</option>
+              </select>
             </div>
 
             {/* Update student list section - only for Active status */}
@@ -276,7 +345,7 @@ export default function EditActivityModal({
               </div>
             )}
 
-            {/* Row 2: Date & Mode */}
+            {/* Row 3: Date & Mode */}
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Date</label>
@@ -302,7 +371,7 @@ export default function EditActivityModal({
               </div>
             </div>
 
-            {/* Row 3: Location/Platform */}
+            {/* Row 4: Location/Platform */}
             <div>
               <label className="text-sm font-medium">
                 {editedActivity.mode === "Offline" ? "Venue" : "Platform"}
@@ -321,7 +390,7 @@ export default function EditActivityModal({
               />
             </div>
 
-            {/* Row 4: Eligible Departments */}
+            {/* Row 5: Eligible Departments */}
             <div>
               <label className="text-sm font-medium">
                 Eligible Departments
@@ -372,7 +441,7 @@ export default function EditActivityModal({
               </div>
             </div>
 
-            {/* Row 5: SPOC Details */}
+            {/* Row 6: SPOC Details */}
             <div>
               <label className="text-sm font-medium">
                 Student Point of Contact

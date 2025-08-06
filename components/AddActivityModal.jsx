@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { XIcon, UploadIcon } from './icons';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { unifiedActivitiesService } from '../lib/unifiedActivitiesService';
 
 export default function AddActivityModal({
     isOpen,
@@ -15,7 +16,8 @@ export default function AddActivityModal({
     Badge
 }) {
     const [activity, setActivity] = useState({
-        companyName: '',
+        company: '',
+        activityName: '',
         activityType: 'Pre-placement Talk',
         interviewRound: 1,
         date: '',
@@ -33,7 +35,40 @@ export default function AddActivityModal({
     const [availableUsers, setAvailableUsers] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState([]);
     const [validationErrors, setValidationErrors] = useState({});
+    const [availableCompanies, setAvailableCompanies] = useState([]);
+    const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
+    const [filteredCompanies, setFilteredCompanies] = useState([]);
     const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        if (isOpen) {
+            fetchAvailableUsers();
+            fetchAvailableCompanies();
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        // Filter companies based on input
+        if (activity.company) {
+            const filtered = availableCompanies.filter(company =>
+                company.toLowerCase().includes(activity.company.toLowerCase())
+            );
+            setFilteredCompanies(filtered);
+            setShowCompanyDropdown(filtered.length > 0 && activity.company !== '');
+        } else {
+            setFilteredCompanies([]);
+            setShowCompanyDropdown(false);
+        }
+    }, [activity.company, availableCompanies]);
+
+    const fetchAvailableCompanies = async () => {
+        try {
+            const companies = await unifiedActivitiesService.getAllCompanies();
+            setAvailableCompanies(companies);
+        } catch (error) {
+            console.error('Error fetching companies:', error);
+        }
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -55,6 +90,20 @@ export default function AddActivityModal({
             setAvailableUsers(users);
         } catch (error) {
             // Error fetching users - continue with empty list
+        }
+    };
+
+    const handleCompanySelect = (company) => {
+        setActivity(prev => ({ ...prev, company }));
+        setShowCompanyDropdown(false);
+        
+        // Clear validation error when user selects a company
+        if (validationErrors.company) {
+            setValidationErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.company;
+                return newErrors;
+            });
         }
     };
 
@@ -90,8 +139,12 @@ export default function AddActivityModal({
         const errors = {};
 
         // Required field validations
-        if (!activity.companyName.trim()) {
-            errors.companyName = 'Company name is required';
+        if (!activity.company.trim()) {
+            errors.company = 'Company name is required';
+        }
+
+        if (!activity.activityName.trim()) {
+            errors.activityName = 'Activity name is required';
         }
 
         if (!activity.date) {
@@ -209,7 +262,8 @@ export default function AddActivityModal({
         
         // Reset form
         setActivity({
-            companyName: '',
+            company: '',
+            activityName: '',
             activityType: 'Pre-placement Talk',
             interviewRound: 1,
             date: '',
@@ -249,46 +303,87 @@ export default function AddActivityModal({
                             onChange={handleFileChange}
                         />
 
-                        {/* Row 1: Company & Activity Type */}
+                        {/* Row 1: Company & Activity Name */}
                         <div className="grid sm:grid-cols-2 gap-4">
-                            <div>
+                            <div className="relative">
                                 <label className="text-sm font-medium">Company Name *</label>
                                 <input 
                                     type="text" 
-                                    name="companyName" 
-                                    value={activity.companyName} 
+                                    name="company" 
+                                    value={activity.company} 
                                     onChange={handleChange} 
-                                    placeholder="Enter company name"
+                                    onFocus={() => setShowCompanyDropdown(filteredCompanies.length > 0)}
+                                    placeholder="Enter or select company name"
                                     className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
-                                        validationErrors.companyName 
+                                        validationErrors.company 
                                             ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
                                             : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
                                     }`}
                                 />
-                                {validationErrors.companyName && (
-                                    <p className="mt-1 text-sm text-red-600">{validationErrors.companyName}</p>
+                                {validationErrors.company && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.company}</p>
+                                )}
+                                
+                                {/* Company Dropdown */}
+                                {showCompanyDropdown && filteredCompanies.length > 0 && (
+                                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
+                                        {filteredCompanies.map((company, index) => (
+                                            <div
+                                                key={index}
+                                                className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+                                                onClick={() => handleCompanySelect(company)}
+                                            >
+                                                {company}
+                                            </div>
+                                        ))}
+                                        {!filteredCompanies.includes(activity.company) && activity.company.trim() && (
+                                            <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-600 text-sm text-blue-600 dark:text-blue-400">
+                                                Add "{activity.company}" as new company
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             <div>
-                                <label className="text-sm font-medium">Activity Type</label>
-                                <select 
-                                    name="activityType" 
-                                    value={activity.activityType} 
+                                <label className="text-sm font-medium">Activity Name *</label>
+                                <input 
+                                    type="text" 
+                                    name="activityName" 
+                                    value={activity.activityName} 
                                     onChange={handleChange} 
-                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
-                                >
-                                    <option>Pre-placement Talk</option>
-                                    <option>Online Assessment</option>
-                                    <option>Interview Round</option>
-                                    <option>Group Discussion</option>
-                                    <option>Technical Interview</option>
-                                    <option>HR Interview</option>
-                                    <option>Final Selection</option>
-                                </select>
+                                    placeholder="e.g., Pre-placement Talk, Technical Round 1"
+                                    className={`mt-1 block w-full rounded-md border shadow-sm h-10 px-3 ${
+                                        validationErrors.activityName 
+                                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900'
+                                    }`}
+                                />
+                                {validationErrors.activityName && (
+                                    <p className="mt-1 text-sm text-red-600">{validationErrors.activityName}</p>
+                                )}
                             </div>
                         </div>
 
-                        {/* Row 2: Date & Time */}
+                        {/* Row 2: Activity Type */}
+                        <div>
+                            <label className="text-sm font-medium">Activity Type</label>
+                            <select 
+                                name="activityType" 
+                                value={activity.activityType} 
+                                onChange={handleChange} 
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 shadow-sm h-10 px-3"
+                            >
+                                <option>Pre-placement Talk</option>
+                                <option>Online Assessment</option>
+                                <option>Interview Round</option>
+                                <option>Group Discussion</option>
+                                <option>Technical Interview</option>
+                                <option>HR Interview</option>
+                                <option>Final Selection</option>
+                            </select>
+                        </div>
+
+                        {/* Row 3: Date & Time */}
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-sm font-medium">Date *</label>
@@ -328,7 +423,7 @@ export default function AddActivityModal({
                             </div>
                         </div>
 
-                        {/* Row 3: Mode & Location */}
+                        {/* Row 4: Mode & Location */}
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-sm font-medium">Mode</label>
@@ -365,7 +460,7 @@ export default function AddActivityModal({
                             </div>
                         </div>
 
-                        {/* Row 4: SPOC Details */}
+                        {/* Row 5: SPOC Details */}
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-sm font-medium">SPOC Name *</label>
@@ -444,7 +539,7 @@ export default function AddActivityModal({
                             </div>
                         )}
 
-                        {/* Row 5: Eligible Departments */}
+                        {/* Row 6: Eligible Departments */}
                         <div>
                              <label className="text-sm font-medium">Eligible Departments</label>
                              <div className="grid grid-cols-3 gap-2 mt-1">
@@ -469,7 +564,7 @@ export default function AddActivityModal({
                              </div>
                         </div>
 
-                        {/* Row 6: User Permissions */}
+                        {/* Row 7: User Permissions */}
                         <div>
                             <label className="text-sm font-medium">Attendance Marking Permissions</label>
                             <div className="mt-1">

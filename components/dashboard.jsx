@@ -1,5 +1,7 @@
 // components/dashboard.jsx
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
+import { companiesService } from "../lib/companiesService";
 // Import all necessary icons
 import {
   UsersIcon,
@@ -12,14 +14,15 @@ import {
   PlayIcon,
   PauseIcon,
   RefreshIcon,
+  BuildingIcon,
 } from "./icons";
 
 export default function Dashboard({
   activities,
-  dashboardTab = "active", // Add default value
+  dashboardTab = "active",
   setDashboardTab,
   onSelectActivity,
-  onViewAttendance, // Add new prop for viewing attendance
+  onViewAttendance,
   onAddActivityClick,
   onEditActivity,
   onDeleteActivity,
@@ -33,16 +36,125 @@ export default function Dashboard({
   CardDescription,
   CardContent,
   CardFooter,
-  Button,
   Badge,
-  userProfile, // Add userProfile to props
+  Button,
+  userProfile,
+  // Optional callback to expose the debounced refresh function to parent
+  onDashboardRefresh,
 }) {
+  // State management
+  const [viewMode, setViewMode] = useState("companies"); // "companies" or "activities"
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [companies, setCompanies] = useState([]);
+  const [companyActivities, setCompanyActivities] = useState([]);
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(false);
+  const [isLoadingCompanyActivities, setIsLoadingCompanyActivities] = useState(false);
+  const [companiesError, setCompaniesError] = useState("");
+  
+  // Debouncing and optimization states
+  const [refreshTimeout, setRefreshTimeout] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Define data loading functions first
+  const loadCompanies = useCallback(async () => {
+    try {
+      setIsLoadingCompanies(true);
+      setCompaniesError("");
+      
+      // Load companies normally
+      const companiesData = await companiesService.getCompaniesWithCounts();
+      setCompanies(companiesData);
+    } catch (error) {
+      console.error("Error loading companies:", error);
+      setCompaniesError("Failed to load companies");
+    } finally {
+      setIsLoadingCompanies(false);
+    }
+  }, []);
+
+  const loadCompanyActivities = useCallback(async (companyId) => {
+    try {
+      setIsLoadingCompanyActivities(true);
+      const activities = await companiesService.getCompanyActivities(companyId);
+      setCompanyActivities(activities);
+    } catch (error) {
+      console.error("Error loading company activities:", error);
+      setCompanyActivities([]);
+    } finally {
+      setIsLoadingCompanyActivities(false);
+    }
+  }, []);
+
+  // Load companies on component mount
+  useEffect(() => {
+    loadCompanies();
+  }, [loadCompanies]);
+
+  // Optimized debounced refresh function with better state management
+  const debouncedRefresh = useCallback((delay = 500) => {
+    // Clear any existing timeout to prevent multiple refreshes
+    if (refreshTimeout) {
+      clearTimeout(refreshTimeout);
+    }
+    
+    const newTimeout = setTimeout(() => {
+      // Prevent multiple concurrent refreshes
+      if (!isRefreshing) {
+        setIsRefreshing(true);
+        
+        const refreshPromises = [loadCompanies()];
+        
+        if (selectedCompany && viewMode === "activities") {
+          refreshPromises.push(loadCompanyActivities(selectedCompany.id));
+        }
+        
+        Promise.all(refreshPromises)
+          .then(() => {
+            // Refresh completed successfully
+          })
+          .catch((error) => {
+            console.error("Error during debounced refresh:", error);
+          })
+          .finally(() => {
+            setIsRefreshing(false);
+          });
+      }
+    }, delay);
+    
+    setRefreshTimeout(newTimeout);
+  }, [selectedCompany, isRefreshing, refreshTimeout, viewMode, loadCompanies, loadCompanyActivities]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+    };
+  }, [refreshTimeout]);
+
+  const handleCompanySelect = useCallback(async (company) => {
+    try {
+      setSelectedCompany(company);
+      setViewMode("activities");
+      await loadCompanyActivities(company.id);
+    } catch (error) {
+      console.error('Error selecting company:', error);
+    }
+  }, [loadCompanyActivities]);
+
+  const handleBackToCompanies = () => {
+    setViewMode("companies");
+    setSelectedCompany(null);
+    setCompanyActivities([]);
+  };
+
   const statusStyles = {
-    Active:
-      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-    "In Progress":
-      "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+    Active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+    "In Progress": "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
     Inactive: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400",
+    Completed: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+    Cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   };
 
   // Check if user can manage activities (admin or creator)
@@ -55,88 +167,105 @@ export default function Dashboard({
     );
   };
 
-  // Get status change options based on current status
-  const getStatusChangeOptions = (currentStatus) => {
-    switch (currentStatus) {
-      case "Inactive":
-        return [
-          {
-            value: "Active",
-            label: "Activate",
-            shortLabel: "Start",
-            icon: PlayIcon,
-            color: "green",
-          },
-          {
-            value: "In Progress",
-            label: "Mark In Progress",
-            shortLabel: "Progress",
-            icon: RefreshIcon,
-            color: "blue",
-          },
-        ];
-      case "In Progress":
-        return [
-          {
-            value: "Active",
-            label: "Activate",
-            shortLabel: "Start",
-            icon: PlayIcon,
-            color: "green",
-          },
-          {
-            value: "Inactive",
-            label: "Deactivate",
-            shortLabel: "Pause",
-            icon: PauseIcon,
-            color: "gray",
-          },
-        ];
-      case "Active":
-        return [
-          {
-            value: "In Progress",
-            label: "Mark In Progress",
-            shortLabel: "Progress",
-            icon: RefreshIcon,
-            color: "blue",
-          },
-          {
-            value: "Inactive",
-            label: "Deactivate",
-            shortLabel: "Pause",
-            icon: PauseIcon,
-            color: "gray",
-          },
-        ];
-      default:
-        return [];
-    }
-  };
-
-  // Filter activities based on the selected tab
-  const getFilteredActivities = () => {
-    if (!activities || activities.length === 0) return [];
-    
-    if (dashboardTab === "active") {
-      return activities.filter(
-        (activity) => activity.status === "Active" || activity.status === "In Progress"
+  // Optimistic update for activity status changes with better state management
+  const updateActivityStatusOptimistically = useCallback((activityId, newStatus) => {
+    // Update in companyActivities if we're viewing activities
+    if (viewMode === "activities" && companyActivities.length > 0) {
+      setCompanyActivities(prev => 
+        prev.map(activity => 
+          activity.id === activityId 
+            ? { ...activity, status: newStatus, updatedAt: new Date().toISOString() }
+            : activity
+        )
       );
-    } else if (dashboardTab === "inactive") {
-      return activities.filter((activity) => activity.status === "Inactive");
     }
-    return activities; // fallback to all activities
-  };
+    
+    // Also optimistically update the company counts in the companies list
+    // This helps with immediate visual feedback when user goes back to companies view
+    setCompanies(prev => prev.map(company => {
+      // Find the activity in this company and update counts
+      // This is a simplified update - the real counts will be updated by backend recalibration
+      const updatedCompany = { ...company };
+      
+      // Note: We can't perfectly calculate the new counts without knowing the old status
+      // But we can at least trigger a visual change. The real counts will come from backend.
+      if (newStatus === "Active" && company.activeActivities !== undefined) {
+        // Increment active count (approximation)
+        updatedCompany.activeActivities = Math.max(0, (company.activeActivities || 0));
+      } else if (newStatus === "Completed" && company.completedActivities !== undefined) {
+        // Increment completed count (approximation)
+        updatedCompany.completedActivities = Math.max(0, (company.completedActivities || 0));
+      }
+      
+      return updatedCompany;
+    }));
+  }, [viewMode, companyActivities]);
 
-  const filteredActivities = getFilteredActivities();
+  // Enhanced activity status change handler with single controlled refresh
+  const handleActivityStatusChange = useCallback(async (activity, newStatus) => {
+    // Prevent multiple simultaneous status changes
+    if (isRefreshing) {
+      return;
+    }
+    
+    try {
+      // Immediate optimistic update - update local state only
+      updateActivityStatusOptimistically(activity.id, newStatus);
+      
+      // Set refreshing state to prevent multiple operations
+      setIsRefreshing(true);
+      
+      // Call the parent's status change handler
+      if (onChangeActivityStatus) {
+        await onChangeActivityStatus(activity, newStatus);
+      }
+      
+      // After the backend processes the change, do a single controlled refresh
+      // Use a timeout to allow backend recalibration to complete, then refresh
+      setTimeout(async () => {
+        try {
+          // Refresh data - but preserve current view state
+          const currentView = viewMode;
+          const currentCompany = selectedCompany;
+          
+          await loadCompanies();
+          
+          // Only refresh company activities if we're still in the same view
+          if (currentView === "activities" && currentCompany) {
+            await loadCompanyActivities(currentCompany.id);
+          }
+          
+        } catch (refreshError) {
+          console.error("Error during post-backend refresh:", refreshError);
+        } finally {
+          setIsRefreshing(false);
+        }
+      }, 2500); // 2.5 second delay for backend processing
+      
+    } catch (error) {
+      console.error("Error changing activity status:", error);
+      setIsRefreshing(false);
+      
+      // On error, do a quick refresh to revert optimistic changes
+      setTimeout(async () => {
+        try {
+          if (viewMode === "activities" && selectedCompany) {
+            await loadCompanyActivities(selectedCompany.id);
+          }
+          await loadCompanies();
+        } catch (recoveryError) {
+          console.error("Error during recovery refresh:", recoveryError);
+        }
+      }, 500);
+    }
+  }, [updateActivityStatusOptimistically, onChangeActivityStatus, viewMode, selectedCompany, loadCompanyActivities, loadCompanies, isRefreshing]);
 
-  // Get counts for tab badges
-  const activeCount = activities.filter(
-    (activity) => activity.status === "Active" || activity.status === "In Progress"
-  ).length;
-  const inactiveCount = activities.filter(
-    (activity) => activity.status === "Inactive"
-  ).length;
+  // Expose debounced refresh to parent component
+  useEffect(() => {
+    if (onDashboardRefresh && typeof onDashboardRefresh === 'function') {
+      onDashboardRefresh(debouncedRefresh);
+    }
+  }, [onDashboardRefresh, debouncedRefresh]);
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-8">
@@ -151,352 +280,390 @@ export default function Dashboard({
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Placerly</h1>
             <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
-              Manage all placement activities and track attendance.
+              {viewMode === "companies" 
+                ? "Manage companies and their placement activities" 
+                : `Activities for ${selectedCompany?.name || 'Selected Company'}`}
             </p>
           </div>
         </div>
-        <Button onClick={onAddActivityClick} className="w-full sm:w-auto whitespace-nowrap">
-          + Add Activity
-        </Button>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-          <Button
-            variant={dashboardTab === "active" ? "default" : "outline"}
-            onClick={() => setDashboardTab && setDashboardTab("active")}
-            className="w-full sm:w-auto justify-start sm:justify-center"
-          >
-            <div className="flex items-center gap-2">
-              <PlayIcon className="h-4 w-4" />
-              <span>Active & In Progress</span>
-              {activeCount > 0 && (
-                <Badge variant="secondary" className="ml-1 px-2 py-0.5 text-xs">
-                  {activeCount}
-                </Badge>
-              )}
-            </div>
-          </Button>
-          
-          <Button
-            variant={dashboardTab === "inactive" ? "default" : "outline"}
-            onClick={() => setDashboardTab && setDashboardTab("inactive")}
-            className="w-full sm:w-auto justify-start sm:justify-center"
-          >
-            <div className="flex items-center gap-2">
-              <PauseIcon className="h-4 w-4" />
-              <span>Inactive</span>
-              {inactiveCount > 0 && (
-                <Badge variant="secondary" className="ml-1 px-2 py-0.5 text-xs">
-                  {inactiveCount}
-                </Badge>
-              )}
-            </div>
-          </Button>
-        </div>
-        
-        {/* Summary Stats and Refresh Button */}
-        <div className="flex items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-4">
-            <span>Total: {activities.length} activities</span>
-            {dashboardTab === "active" && (
-              <span>Showing: {filteredActivities.length} active</span>
-            )}
-            {dashboardTab === "inactive" && (
-              <span>Showing: {filteredActivities.length} inactive</span>
-            )}
-          </div>
-          
-          {onRefresh && (
-            <Button
-              onClick={onRefresh}
-              disabled={isLoadingActivities}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <RefreshIcon className={`h-4 w-4 ${isLoadingActivities ? 'animate-spin' : ''}`} />
-              {isLoadingActivities ? 'Loading...' : 'Refresh'}
+        <div className="flex gap-2">
+          {viewMode === "activities" && (
+            <Button onClick={handleBackToCompanies} variant="outline" className="w-full sm:w-auto">
+              ← Back to Companies
             </Button>
           )}
+          <Button onClick={onAddActivityClick} className="w-full sm:w-auto whitespace-nowrap">
+            + Add Activity
+          </Button>
         </div>
       </div>
 
-      {/* Error State */}
-      {activitiesError && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <h3 className="text-red-800 dark:text-red-200 font-medium mb-2">Error Loading Activities</h3>
-          <p className="text-red-700 dark:text-red-300 text-sm">{activitiesError}</p>
-          {onRefresh && (
-            <Button onClick={onRefresh} variant="outline" size="sm" className="mt-3">
-              Try Again
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Loading State */}
-      {isLoadingActivities && !activitiesError && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <RefreshIcon className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-            <p className="text-gray-500 dark:text-gray-400">Loading activities...</p>
+      {/* View Mode: Companies */}
+      {viewMode === "companies" && (
+        <>
+          {/* Companies Header */}
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-semibold">Companies</h2>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                <span>Total: {companies.length} companies</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => debouncedRefresh(0)} // Immediate refresh when manually triggered
+                disabled={isLoadingCompanies || isRefreshing}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <RefreshIcon className={`h-4 w-4 ${(isLoadingCompanies || isRefreshing) ? 'animate-spin' : ''}`} />
+                {(isLoadingCompanies || isRefreshing) ? 'Loading...' : 'Refresh'}
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Activities Grid */}
-      <div>
-        {!isLoadingActivities && !activitiesError && filteredActivities.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-            {filteredActivities.map((activity) => {
-              // Calculate present count using participant attendance property
-              const presentCount =
-                activity.participants?.filter((p) => p.attendance)?.length || 0;
-              const totalStudents = activity.participants?.length || 0;
+          {/* Companies Error State */}
+          {companiesError && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <h3 className="text-red-800 dark:text-red-200 font-medium mb-2">Error Loading Companies</h3>
+              <p className="text-red-700 dark:text-red-300 text-sm">{companiesError}</p>
+              <Button onClick={loadCompanies} variant="outline" size="sm" className="mt-3">
+                Try Again
+              </Button>
+            </div>
+          )}
 
-              return (
-                <Card key={activity.id} className="flex flex-col h-full">
-                  <CardHeader className="pb-2 sm:pb-3">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <CardTitle className="text-base sm:text-lg lg:text-xl leading-tight">
-                            {activity.activityType === "Interview Round"
-                              ? `${activity.activityType} ${activity.interviewRound}`
-                              : activity.activityType}
-                          </CardTitle>
-                        </div>
-                        <Badge
-                          variant="secondary"
-                          className={`${
-                            statusStyles[activity.status] ||
-                            statusStyles["Inactive"]
-                          } border-none text-xs px-2 py-1 shrink-0`}
-                        >
-                          {activity.status}
-                        </Badge>
+          {/* Companies Loading State */}
+          {isLoadingCompanies && !companiesError && (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <RefreshIcon className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+                <p className="text-gray-500 dark:text-gray-400">Loading companies...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Companies Grid */}
+          {!isLoadingCompanies && !companiesError && companies.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {companies.map((company) => (
+                <Card 
+                  key={company.id} 
+                  className="hover:shadow-lg transition-all duration-200 group flex flex-col h-full border-gray-200 dark:border-gray-700"
+                >
+                  <CardHeader className="pb-2 sm:pb-3 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
+                        <BuildingIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                       </div>
-                      <CardDescription className="text-sm sm:text-base font-medium text-gray-900 dark:text-white">
-                        {activity.companyName}
-                      </CardDescription>
+                      <div className="min-w-0 flex-1">
+                        <CardTitle className="text-base font-semibold truncate">
+                          {company.name}
+                        </CardTitle>
+                        {company.industry && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {company.industry}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   
-                  <CardContent className="flex-grow space-y-2 sm:space-y-3 pt-0 pb-2">
-                    <div className="grid grid-cols-1 gap-1.5 sm:gap-2">
-                      <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-                        <CalendarIcon className="h-3 w-3 mr-2 flex-shrink-0" />
-                        <span className="truncate">
-                          {new Date(activity.date).toLocaleDateString()}
-                          {activity.time && (
-                            <span className="ml-1 text-gray-500">• {activity.time}</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-                        <MapPinIcon className="h-3 w-3 mr-2 flex-shrink-0" />
-                        <span className="truncate">
-                          {activity.location || activity.mode}
-                        </span>
-                      </div>
+                  <CardContent className="flex-1 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      {company.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
+                          {company.description}
+                        </p>
+                      )}
                       
-                      {/* Participant Stats - Compact for mobile */}
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <div className="flex items-center text-gray-500 dark:text-gray-400">
-                          <UsersIcon className="h-3 w-3 mr-1 flex-shrink-0" />
-                          <span>{totalStudents} Total</span>
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-1">
+                          <CalendarIcon className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {company.totalActivities || 0} Activities
+                          </span>
                         </div>
-                        <div className="flex items-center text-green-600 dark:text-green-400">
-                          <CheckCircleIcon className="h-3 w-3 mr-1 flex-shrink-0" />
-                          <span>{presentCount} Present</span>
+                        <div className="flex items-center gap-1">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500" />
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {company.activeActivities || 0} Active
+                          </span>
                         </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-1">
+                          <CheckCircleIcon className="h-4 w-4 text-purple-500" />
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {company.completedActivities || 0} Completed
+                          </span>
+                        </div>
+                        {company.location && (
+                          <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <MapPinIcon className="h-4 w-4" />
+                            <span className="truncate">{company.location}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
+
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                      <Button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCompanySelect(company);
+                        }}
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full text-xs"
+                      >
+                        View Activities ({company.totalActivities || 0})
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* No Companies State */}
+          {!isLoadingCompanies && !companiesError && companies.length === 0 && (
+            <div className="text-center py-12">
+              <BuildingIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No companies found</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                Companies will appear here once activities are organized.
+              </p>
+              <Button onClick={onAddActivityClick}>
+                + Add Activity
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* View Mode: Activities */}
+      {viewMode === "activities" && selectedCompany && (
+        <>
+          {/* Activities Header */}
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-semibold">{selectedCompany.name} Activities</h2>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                <span>Total: {companyActivities.length} activities</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => debouncedRefresh(0)} // Immediate refresh when manually triggered
+                disabled={isLoadingCompanyActivities || isRefreshing}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <RefreshIcon className={`h-4 w-4 ${(isLoadingCompanyActivities || isRefreshing) ? 'animate-spin' : ''}`} />
+                {(isLoadingCompanyActivities || isRefreshing) ? 'Loading...' : 'Refresh'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Activities Loading State */}
+          {isLoadingCompanyActivities && (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <RefreshIcon className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+                <p className="text-gray-500 dark:text-gray-400">Loading activities...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Activities Grid */}
+          {!isLoadingCompanyActivities && companyActivities.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {companyActivities.map((activity) => {
+                const totalStudents = activity.totalParticipants || 0;
+                const presentCount = activity.totalPresent || 0;
+
+                return (
+                  <Card key={activity.id} className="hover:shadow-lg transition-all duration-200 cursor-pointer group flex flex-col h-full border-gray-200 dark:border-gray-700">
+                    <CardHeader className="pb-2 sm:pb-3 flex-shrink-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="p-1.5 sm:p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
+                            <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <CardTitle className="text-sm sm:text-base truncate text-gray-600 dark:text-gray-400">
+                              {activity.activityType}
+                            </CardTitle>
+                            <CardDescription className="text-xs sm:text-sm font-medium truncate">
+                              {activity.activityName}
+                            </CardDescription>
+                          </div>
+                        </div>
+                        <Badge className={`text-xs sm:text-sm whitespace-nowrap ${statusStyles[activity.status] || statusStyles.Inactive}`}>
+                          {activity.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
                     
-                    {/* Departments - Compact display */}
-                    {activity.eligibleDepartments?.length > 0 && (
-                      <div className="pt-1">
-                        <div className="flex flex-wrap gap-1">
-                          {activity.eligibleDepartments.slice(0, 2).map((d, i) => (
-                            <Badge
-                              key={i}
-                              variant="secondary"
-                              className="text-xs px-1.5 py-0.5"
+                    <CardContent className="flex-1 flex flex-col justify-between">
+                      <div className="space-y-2 sm:space-y-3">
+                        <div className="flex items-center gap-1 sm:gap-2 text-sm">
+                          <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {new Date(activity.date).toLocaleDateString()}
+                          </span>
+                          {activity.time && (
+                            <span className="text-gray-500 dark:text-gray-400">
+                              • {activity.time}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1 sm:gap-2 text-sm">
+                          <MapPinIcon className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                          <span className="text-gray-600 dark:text-gray-300 truncate">
+                            {activity.mode === "Online" ? "Online" : activity.location || "TBD"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 sm:gap-2 text-sm">
+                          <UsersIcon className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {presentCount}/{totalStudents} Present
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 sm:mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <div className="flex flex-wrap gap-1 sm:gap-2 justify-end">
+                          {onViewAttendance && (
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onViewAttendance(activity);
+                              }}
+                              size="sm"
+                              variant="outline"
+                              className="flex items-center gap-1 text-xs px-2 py-1"
                             >
-                              {d.name}
-                            </Badge>
-                          ))}
-                          {activity.eligibleDepartments.length > 2 && (
-                            <Badge variant="secondary" className="text-xs px-1.5 py-0.5">
-                              +{activity.eligibleDepartments.length - 2}
-                            </Badge>
+                              <CheckCircleIcon className="h-3 w-3" />
+                              <span className="hidden sm:inline">View</span>
+                            </Button>
+                          )}
+
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectActivity(activity);
+                            }}
+                            size="sm"
+                            variant="outline"
+                            className="flex items-center gap-1 text-xs px-2 py-1"
+                          >
+                            <QrCodeIcon className="h-3 w-3" />
+                            <span className="hidden sm:inline">Scan</span>
+                          </Button>
+
+                          {canManageActivity(activity) && (
+                            <>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const newStatus = activity.status === "Active" ? "Inactive" : "Active";
+                                  handleActivityStatusChange(activity, newStatus);
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className={`flex items-center gap-1 text-xs px-2 py-1 ${
+                                  activity.status === "Active" 
+                                    ? "text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-900/20" 
+                                    : "text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/20"
+                                }`}
+                                title={activity.status === "Active" ? "Pause Activity" : "Activate Activity"}
+                              >
+                                {activity.status === "Active" ? (
+                                  <PauseIcon className="h-3 w-3" />
+                                ) : (
+                                  <PlayIcon className="h-3 w-3" />
+                                )}
+                                <span className="hidden sm:inline">
+                                  {activity.status === "Active" ? "Pause" : "Start"}
+                                </span>
+                              </Button>
+
+                              {activity.status !== "Completed" && activity.status !== "Cancelled" && (
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleActivityStatusChange(activity, "Completed");
+                                  }}
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex items-center gap-1 text-xs px-2 py-1 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/20"
+                                  title="Mark as Completed"
+                                >
+                                  <CheckCircleIcon className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Complete</span>
+                                </Button>
+                              )}
+
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditActivity(activity);
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="flex items-center gap-1 text-xs px-2 py-1"
+                              >
+                                <EditIcon className="h-3 w-3" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </Button>
+
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteActivity(activity);
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="flex items-center gap-1 text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
+                              >
+                                <TrashIcon className="h-3 w-3" />
+                                <span className="hidden sm:inline">Delete</span>
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
-                    )}
-                    
-                    {/* SPOC Info - Hide on mobile if space is tight */}
-                    {activity.spocName && (
-                      <div className="pt-1 border-t border-gray-100 dark:border-gray-800 hidden sm:block">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          SPOC: {activity.spocName}
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                  
-                  <CardFooter className="flex flex-col gap-1.5 sm:gap-2 pt-2">
-                    {/* Primary Action Button - Full Width */}
-                    <Button
-                      onClick={() => onSelectActivity(activity)}
-                      className="w-full h-9 sm:h-10 px-3 text-sm sm:text-base font-medium"
-                      variant={
-                        activity.status === "Inactive" ? "outline" : "default"
-                      }
-                    >
-                      {activity.status === "Inactive" ? (
-                        <>
-                          <UsersIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                          View Attendance
-                        </>
-                      ) : (
-                        <>
-                          <QrCodeIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                          Mark Attendance
-                        </>
-                      )}
-                    </Button>
-                    
-                    {/* View Attendance Button - Only for active activities (inactive activities already have it as primary action) */}
-                    {activity.status !== "Inactive" && (
-                      <Button
-                        onClick={() => onViewAttendance && onViewAttendance(activity)}
-                        variant="outline"
-                        className="w-full h-8 sm:h-9 px-3 text-xs sm:text-sm font-medium border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                      >
-                        <UsersIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
-                        View Attendance
-                      </Button>
-                    )}
-                    
-                    {/* Secondary Actions Row - Responsive icon buttons */}
-                    {canManageActivity(activity) && (
-                      <div className="flex gap-1.5 sm:gap-2 w-full">
-                        {/* Edit Button - Available for all activities */}
-                        {onEditActivity && (
-                          <Button
-                            onClick={() => onEditActivity(activity)}
-                            variant="outline"
-                            className="flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm flex items-center justify-center"
-                            title="Edit Activity"
-                          >
-                            <EditIcon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
-                          </Button>
-                        )}
-
-                        {/* Status Change Buttons for Non-Active */}
-                        {activity.status !== "Active" &&
-                          onChangeActivityStatus &&
-                          getStatusChangeOptions(activity.status).map((option) => (
-                            <Button
-                              key={option.value}
-                              onClick={() =>
-                                onChangeActivityStatus(activity, option.value)
-                              }
-                              variant="outline"
-                              className={`flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm flex items-center justify-center ${
-                                option.color === "green"
-                                  ? "hover:bg-green-50 hover:text-green-700 border-green-200 text-green-600"
-                                  : option.color === "blue"
-                                  ? "hover:bg-blue-50 hover:text-blue-700 border-blue-200 text-blue-600"
-                                  : "hover:bg-gray-50 hover:text-gray-700"
-                              }`}
-                              title={option.label}
-                            >
-                              <option.icon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
-                            </Button>
-                          ))}
-
-                        {/* Delete Button */}
-                        {(activity.status === "Inactive" ||
-                          activity.status === "In Progress") &&
-                          onDeleteActivity && (
-                            <Button
-                              onClick={() => onDeleteActivity(activity)}
-                              variant="outline"
-                              className="flex-1 min-w-0 h-9 sm:h-10 md:h-11 px-2 sm:px-3 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 flex items-center justify-center"
-                              title="Delete Activity"
-                            >
-                              <TrashIcon className="h-4 w-4 sm:h-5 sm:w-5 md:h-5 md:w-5 flex-shrink-0" />
-                            </Button>
-                          )}
-                      </div>
-                    )}
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
-        ) : !isLoadingActivities && !activitiesError ? (
-          <div className="text-center py-12">
-            <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-              {dashboardTab === "active" ? (
-                <PlayIcon className="h-12 w-12 text-gray-400" />
-              ) : (
-                <PauseIcon className="h-12 w-12 text-gray-400" />
-              )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {activities.length === 0 
-                ? "No activities yet"
-                : dashboardTab === "active" 
-                  ? "No active activities"
-                  : "No inactive activities"
-              }
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              {activities.length === 0 
-                ? "Get started by creating your first placement activity."
-                : dashboardTab === "active"
-                  ? "All your activities are currently inactive. Activate an activity to get started."
-                  : "No activities have been deactivated yet."
-              }
-            </p>
-            {activities.length === 0 && (
-              <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                <Button onClick={onAddActivityClick}>+ Add Activity</Button>
-                {onRefresh && (
-                  <Button onClick={onRefresh} variant="outline">
-                    <RefreshIcon className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
-                )}
-              </div>
-            )}
-            {activities.length > 0 && dashboardTab === "active" && (
-              <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                <Button onClick={onAddActivityClick}>+ Add Activity</Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setDashboardTab && setDashboardTab("inactive")}
-                >
-                  View Inactive Activities
-                </Button>
-              </div>
-            )}
-            {activities.length > 0 && dashboardTab === "inactive" && (
-              <Button 
-                variant="outline" 
-                onClick={() => setDashboardTab && setDashboardTab("active")}
-              >
-                View Active Activities
+          )}
+
+          {/* No Activities State */}
+          {!isLoadingCompanyActivities && companyActivities.length === 0 && (
+            <div className="text-center py-12">
+              <CalendarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No activities found</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                No activities found for {selectedCompany.name}. Create your first activity for this company.
+              </p>
+              <Button onClick={onAddActivityClick}>
+                + Add Activity
               </Button>
-            )}
-          </div>
-        ) : null}
-      </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
