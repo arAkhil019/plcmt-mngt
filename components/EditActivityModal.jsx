@@ -1,8 +1,10 @@
 // components/EditActivityModal.jsx
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { XIcon, CheckIcon, TrashIcon, UploadIcon } from "./icons";
 import { useAuth } from "../contexts/AuthContext";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function EditActivityModal({
   isOpen,
@@ -44,7 +46,28 @@ export default function EditActivityModal({
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const [filteredCompanies, setFilteredCompanies] = useState([]);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [selectedUsers, setSelectedUsers] = useState([]);
   const fileInputRef = useRef(null);
+
+  // Define fetchAvailableUsers early to avoid hoisting issues
+  const fetchAvailableUsers = useCallback(async () => {
+    try {
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('isActive', '==', true)
+      );
+      const snapshot = await getDocs(usersQuery);
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).filter(user => user.role !== 'admin'); // Exclude admins as they have full access
+      setAvailableUsers(users);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setAvailableUsers([]);
+    }
+  }, []);
 
   // Initialize form with activity data when modal opens
   useEffect(() => {
@@ -62,9 +85,18 @@ export default function EditActivityModal({
         spocContact: activity.spocContact || "",
         status: activity.status || "Active",
       });
+      
+      // Initialize selected users from activity allowedUsers
+      if (activity.allowedUsers) {
+        setSelectedUsers(activity.allowedUsers);
+      } else {
+        setSelectedUsers([]);
+      }
+      
       fetchAvailableCompanies();
+      fetchAvailableUsers();
     }
-  }, [isOpen, activity]);
+  }, [isOpen, activity, fetchAvailableUsers]);
 
   useEffect(() => {
     // Filter companies based on input
@@ -87,6 +119,19 @@ export default function EditActivityModal({
     } catch (error) {
       console.error('Error fetching companies:', error);
     }
+  };
+
+  const handleAddUser = (userId) => {
+    const user = availableUsers.find(u => u.id === userId);
+    if (user && !selectedUsers.find(u => u.id === userId)) {
+      const newSelectedUsers = [...selectedUsers, user];
+      setSelectedUsers(newSelectedUsers);
+    }
+  };
+
+  const handleRemoveUser = (userId) => {
+    const newSelectedUsers = selectedUsers.filter(u => u.id !== userId);
+    setSelectedUsers(newSelectedUsers);
   };
 
   const handleCompanySelect = (company) => {
@@ -142,6 +187,7 @@ export default function EditActivityModal({
       ...activity,
       ...editedActivity,
       id: activity.id, // Keep original ID
+      allowedUsers: selectedUsers.map(u => ({ id: u.id, name: u.name, email: u.email })), // Update allowedUsers
     };
 
     onSubmit(updatedActivity, uploadedFile);
@@ -464,6 +510,38 @@ export default function EditActivityModal({
                   className="rounded-md h-10 px-3"
                 />
               </div>
+            </div>
+
+            {/* User Permissions Management */}
+            <div>
+              <label className="text-sm font-medium">Attendance Marking Permissions</label>
+              <div className="mt-1">
+                <select 
+                  onChange={(e) => e.target.value && handleAddUser(e.target.value)}
+                  value=""
+                  className="w-full h-10 px-3 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                >
+                  <option value="">Select users who can mark attendance...</option>
+                  {availableUsers
+                    .filter(user => !selectedUsers.find(s => s.id === user.id))
+                    .map(user => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} ({user.email}) - {user.role === 'placement_coordinator' ? 'PC' : 'Marker'}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="mt-2 space-x-1">
+                {selectedUsers.map((user) => (
+                  <Badge key={user.id} variant="secondary" className="relative pr-6">
+                    {user.name} ({user.role === 'placement_coordinator' ? 'PC' : 'Marker'})
+                    <button type="button" onClick={() => handleRemoveUser(user.id)} className="absolute top-1/2 right-1 -translate-y-1/2 ml-1 text-gray-500 hover:text-red-500">
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Select users who can mark attendance for this activity. Admins and activity creators always have access.</p>
             </div>
           </CardContent>
           <CardFooter className="justify-between">

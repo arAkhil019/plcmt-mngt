@@ -4,13 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { activityLogsService } from '../lib/activityLogsService';
 
 const ACTIVITY_LOG_CATEGORIES = {
-  AUTHENTICATION: ['LOGIN', 'LOGOUT', 'LOGIN_FAILED', 'PASSWORD_RESET'],
-  ACTIVITY_MANAGEMENT: ['CREATE_ACTIVITY', 'EDIT_ACTIVITY', 'DELETE_ACTIVITY', 'CHANGE_ACTIVITY_STATUS'],
-  ATTENDANCE_SCANNING: ['SCAN_ADMISSION_NUMBER', 'BULK_SCAN_ADMISSIONS', 'REMOVE_SCANNED_ADMISSION', 'COMPLETE_SCANNING_SESSION'],
-  COMPANY_MANAGEMENT: ['CREATE_COMPANY', 'EDIT_COMPANY', 'DELETE_COMPANY'],
-  USER_MANAGEMENT: ['CREATE_USER', 'EDIT_USER', 'DELETE_USER', 'APPROVE_USER'],
-  SYSTEM: ['ERROR_OCCURRED', 'SYSTEM_BACKUP', 'DATA_EXPORT'],
-  OTHER: []
+  AUTHENTICATION: ['LOGIN', 'LOGOUT'],
+  USER_MANAGEMENT: ['CREATE_USER', 'UPDATE_USER', 'DELETE_USER'],
+  ACTIVITY_MANAGEMENT: ['CREATE_ACTIVITY', 'UPDATE_ACTIVITY', 'DELETE_ACTIVITY', 'ACTIVATE_ACTIVITY', 'DEACTIVATE_ACTIVITY', 'CHANGE_ACTIVITY_STATUS'],
+  ATTENDANCE_SCANNING: ['MARK_ATTENDANCE', 'BULK_ATTENDANCE_UPDATE', 'SCAN_MAPPING_ATTENDANCE', 'ADD_PARTICIPANTS', 'SCAN_ADMISSION_NUMBER', 'BULK_SCAN_ADMISSIONS', 'REMOVE_SCANNED_ADMISSION', 'COMPLETE_SCANNING_SESSION'],
+  STUDENT_MANAGEMENT: ['ADD_STUDENT', 'UPDATE_STUDENT', 'DELETE_STUDENT', 'BULK_IMPORT_STUDENTS', 'CLEAR_DEPARTMENT_STUDENTS', 'EXPORT_STUDENTS'],
+  FILE_OPERATIONS: ['UPLOAD_STUDENT_LIST', 'EXPORT_DATA'],
+  SYSTEM: ['SYSTEM_ERROR', 'PERMISSION_DENIED']
 };
 
 const ActivityLogsAdmin = () => {
@@ -198,8 +198,10 @@ const ActivityLogsAdmin = () => {
     if (action.includes('LOGOUT')) return 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800';
     if (action.includes('DELETE')) return 'text-rose-700 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800';
     if (action.includes('CREATE')) return 'text-blue-700 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800';
-    if (action.includes('EDIT')) return 'text-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800';
+    if (action.includes('EDIT') || action.includes('UPDATE')) return 'text-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800';
     if (action.includes('SCAN')) return 'text-violet-700 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-300 border border-violet-200 dark:border-violet-800';
+    if (action.includes('ATTENDANCE') || action.includes('MARK_ATTENDANCE')) return 'text-green-700 bg-green-50 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800';
+    if (action.includes('BULK')) return 'text-purple-700 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800';
     return 'text-gray-700 bg-gray-50 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700';
   };
 
@@ -268,18 +270,35 @@ const ActivityLogsAdmin = () => {
       {/* Filters */}
       <div className="bg-white dark:bg-gray-950 p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
             <select
               value={filters.category}
-              onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
+              onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value, action: '' }))}
               className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">All Categories</option>
               {Object.keys(ACTIVITY_LOG_CATEGORIES).map(category => (
                 <option key={category} value={category}>
                   {category.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Action</label>
+            <select
+              value={filters.action}
+              onChange={(e) => setFilters(prev => ({ ...prev, action: e.target.value }))}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={!filters.category}
+            >
+              <option value="">All Actions</option>
+              {filters.category && ACTIVITY_LOG_CATEGORIES[filters.category]?.map(action => (
+                <option key={action} value={action}>
+                  {action.replace(/_/g, ' ')}
                 </option>
               ))}
             </select>

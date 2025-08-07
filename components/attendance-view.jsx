@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService.js";
 import { studentsService } from "../lib/studentsService.js";
+import { activityLogsService } from "../lib/activityLogsService.js";
 import {
   ArrowLeftIcon,
   UsersIcon,
@@ -173,6 +174,7 @@ export default function AttendanceView({
           {
             id: userProfile?.id || "unknown",
             name: userProfile?.name || "Unknown User",
+            email: userProfile?.email || "unknown@email.com",
           }
         );
       }
@@ -185,6 +187,7 @@ export default function AttendanceView({
           {
             id: userProfile?.id || "unknown",
             name: userProfile?.name || "Unknown User",
+            email: userProfile?.email || "unknown@email.com",
           }
         );
       }
@@ -329,6 +332,46 @@ export default function AttendanceView({
     }.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Handle individual attendance toggling
+  const handleToggleAttendance = async (participant, participantIndex) => {
+    if (!canManageAttendance()) {
+      alert("You don't have permission to manage attendance for this activity.");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Toggle attendance status
+      const newAttendanceStatus = !participant.attendance;
+      
+      // Call the individual markAttendance function with enhanced logging
+      await unifiedActivitiesService.markAttendance(
+        activity.id,
+        participant.admissionNumber,
+        newAttendanceStatus,
+        {
+          id: userProfile?.id || 'unknown',
+          name: userProfile?.name || 'Unknown User',
+          email: userProfile?.email || 'unknown@email.com'
+        }
+      );
+
+      // Refresh participants data
+      await loadParticipants();
+      
+      // Show success message
+      const statusText = newAttendanceStatus ? "present" : "absent";
+      alert(`Successfully marked ${participant.name || participant.admissionNumber} as ${statusText}`);
+      
+    } catch (error) {
+      console.error("Error toggling attendance:", error);
+      alert(`Failed to update attendance: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const presentCount = participants.filter((p) => p.attendance).length;
@@ -719,22 +762,49 @@ export default function AttendanceView({
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            {participant.attendance ? (
-                              <Badge
-                                variant="default"
-                                className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                            {canManageAttendance() ? (
+                              <button
+                                onClick={() => handleToggleAttendance(participant, index)}
+                                disabled={isLoading}
+                                className="cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={`Click to mark as ${participant.attendance ? 'absent' : 'present'}`}
                               >
-                                <CheckCircleIcon className="h-4 w-4 mr-1" />
-                                Present
-                              </Badge>
+                                {participant.attendance ? (
+                                  <Badge
+                                    variant="default"
+                                    className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50"
+                                  >
+                                    <CheckCircleIcon className="h-4 w-4 mr-1" />
+                                    Present
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs px-2 py-1 hover:bg-gray-200 dark:hover:bg-gray-600"
+                                  >
+                                    <ClockIcon className="h-4 w-4 mr-1" />
+                                    Absent
+                                  </Badge>
+                                )}
+                              </button>
                             ) : (
-                              <Badge
-                                variant="secondary"
-                                className="text-xs px-2 py-1"
-                              >
-                                <ClockIcon className="h-4 w-4 mr-1" />
-                                Absent
-                              </Badge>
+                              participant.attendance ? (
+                                <Badge
+                                  variant="default"
+                                  className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                >
+                                  <CheckCircleIcon className="h-4 w-4 mr-1" />
+                                  Present
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs px-2 py-1"
+                                >
+                                  <ClockIcon className="h-4 w-4 mr-1" />
+                                  Absent
+                                </Badge>
+                              )
                             )}
                           </TableCell>
                           <TableCell className="text-sm">

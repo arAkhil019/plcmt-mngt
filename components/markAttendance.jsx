@@ -39,20 +39,12 @@ export default function MarkAttendance({
 }) {
   // Validate required props
   useEffect(() => {
-    console.log("MarkAttendance props:", { activity, userProfile, isScriptLoaded });
-    
     if (!activity || !activity.id) {
       console.error("Invalid activity prop:", activity);
     }
     
     if (!userProfile) {
       console.error("userProfile is not provided");
-    } else {
-      console.log("userProfile:", {
-        id: userProfile.id,
-        name: userProfile.name,
-        email: userProfile.email
-      });
     }
   }, [activity, userProfile]);
 

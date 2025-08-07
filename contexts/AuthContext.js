@@ -11,6 +11,7 @@ import {
   signOut,
   linkWithCredential,
   EmailAuthProvider,
+  deleteUser,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -57,8 +58,36 @@ export const AuthProvider = ({ children }) => {
             const isAdminEmail = user.email === 'cbitplacementtraker@gmail.com';
             
             if (!isAdminEmail && !preApprovedData) {
-              // User is not pre-approved, sign them out
-              await signOut(auth);
+              // Log unauthorized access attempt
+              try {
+                await activityLogsService.logActivity(
+                  user.uid || 'unknown',
+                  user.displayName || user.email?.split('@')[0] || 'Unknown',
+                  user.email || 'unknown@email.com',
+                  ACTIVITY_LOG_TYPES.PERMISSION_DENIED,
+                  `Unauthorized access attempt by non-pre-approved user: ${user.email}`,
+                  {
+                    attemptedAccess: true,
+                    userEmail: user.email,
+                    authProvider: 'google',
+                    actionTaken: 'user_deleted_and_signed_out',
+                    timestamp: new Date().toISOString()
+                  }
+                );
+              } catch (loggingError) {
+                console.error('Error logging unauthorized access:', loggingError);
+              }
+              
+              // User is not pre-approved, delete the Firebase Auth user and sign them out
+              try {
+                // Delete the user from Firebase Auth completely
+                await deleteUser(user);
+              } catch (deleteError) {
+                console.error('Error deleting unauthorized user:', deleteError);
+                // If deletion fails, at least sign them out
+                await signOut(auth);
+              }
+              
               setUser(null);
               setUserProfile(null);
               setIsAuthenticated(false);

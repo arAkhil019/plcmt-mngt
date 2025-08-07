@@ -1,5 +1,5 @@
 // components/dashboard.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
 import { companiesService } from "../lib/companiesService";
 // Import all necessary icons
@@ -41,6 +41,8 @@ export default function Dashboard({
   userProfile,
   // Optional callback to expose the debounced refresh function to parent
   onDashboardRefresh,
+  // New callback to expose state control functions to parent
+  onStateRefReady,
 }) {
   // State management
   const [viewMode, setViewMode] = useState("companies"); // "companies" or "activities"
@@ -52,7 +54,7 @@ export default function Dashboard({
   const [companiesError, setCompaniesError] = useState("");
   
   // Debouncing and optimization states
-  const [refreshTimeout, setRefreshTimeout] = useState(null);
+  const refreshTimeoutRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Define data loading functions first
@@ -93,8 +95,8 @@ export default function Dashboard({
   // Optimized debounced refresh function with better state management
   const debouncedRefresh = useCallback((delay = 500) => {
     // Clear any existing timeout to prevent multiple refreshes
-    if (refreshTimeout) {
-      clearTimeout(refreshTimeout);
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
     }
     
     const newTimeout = setTimeout(() => {
@@ -121,17 +123,17 @@ export default function Dashboard({
       }
     }, delay);
     
-    setRefreshTimeout(newTimeout);
-  }, [selectedCompany, isRefreshing, refreshTimeout, viewMode, loadCompanies, loadCompanyActivities]);
+    refreshTimeoutRef.current = newTimeout;
+  }, [selectedCompany, isRefreshing, viewMode, loadCompanies, loadCompanyActivities]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
-      if (refreshTimeout) {
-        clearTimeout(refreshTimeout);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
     };
-  }, [refreshTimeout]);
+  }, []);
 
   const handleCompanySelect = useCallback(async (company) => {
     try {
@@ -148,6 +150,56 @@ export default function Dashboard({
     setSelectedCompany(null);
     setCompanyActivities([]);
   };
+
+  // State control functions to be exposed to parent component
+  const stateControlFunctions = useCallback(() => ({
+    navigateToCompanyActivities: async (companyName, activityId) => {
+      try {
+        // Find the company by name
+        const company = companies.find(c => c.name === companyName);
+        if (company) {
+          // Set the company and switch to activities view
+          setSelectedCompany(company);
+          setViewMode("activities");
+          await loadCompanyActivities(company.id);
+          
+          // Optional: Scroll to the specific activity if needed
+          if (activityId) {
+            setTimeout(() => {
+              const activityElement = document.getElementById(`activity-${activityId}`);
+              if (activityElement) {
+                activityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          }
+        } else {
+          // Fallback: load companies first if not found
+          await loadCompanies();
+          const updatedCompany = companies.find(c => c.name === companyName);
+          if (updatedCompany) {
+            setSelectedCompany(updatedCompany);
+            setViewMode("activities");
+            await loadCompanyActivities(updatedCompany.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error navigating to company activities:', error);
+        // Fallback to companies view
+        setViewMode("companies");
+      }
+    },
+    setDashboardViewMode: setViewMode,
+    setDashboardSelectedCompany: setSelectedCompany,
+    loadDashboardCompanies: loadCompanies,
+    loadDashboardCompanyActivities: loadCompanyActivities
+  }), [companies, loadCompanies, loadCompanyActivities]);
+
+  // Expose state control functions to parent
+  useEffect(() => {
+    if (onStateRefReady) {
+      onStateRefReady(stateControlFunctions());
+    }
+  }, [onStateRefReady, stateControlFunctions]);
 
   const statusStyles = {
     Active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
@@ -489,7 +541,11 @@ export default function Dashboard({
                 const presentCount = activity.totalPresent || 0;
 
                 return (
-                  <Card key={activity.id} className="hover:shadow-lg transition-all duration-200 cursor-pointer group flex flex-col h-full border-gray-200 dark:border-gray-700">
+                  <Card 
+                    key={activity.id} 
+                    id={`activity-${activity.id}`}
+                    className="hover:shadow-lg transition-all duration-200 cursor-pointer group flex flex-col h-full border-gray-200 dark:border-gray-700"
+                  >
                     <CardHeader className="pb-2 sm:pb-3 flex-shrink-0">
                       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0 flex-1">

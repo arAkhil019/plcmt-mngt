@@ -1,5 +1,5 @@
 // components/AddActivityModal.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { XIcon, UploadIcon } from './icons';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -40,12 +40,41 @@ export default function AddActivityModal({
     const [filteredCompanies, setFilteredCompanies] = useState([]);
     const fileInputRef = useRef(null);
 
+    // Move these above useEffect to avoid ReferenceError
+    const fetchAvailableCompanies = useCallback(async () => {
+        try {
+            const companies = await unifiedActivitiesService.getAllCompanies();
+            setAvailableCompanies(companies);
+        } catch (error) {
+            console.error('Error fetching companies:', error);
+        }
+    }, []);
+
+    const fetchAvailableUsers = useCallback(async () => {
+        try {
+            const usersQuery = query(
+                collection(db, 'users'),
+                where('isActive', '==', true)
+            );
+            const snapshot = await getDocs(usersQuery);
+            const users = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })).filter(user => user.role !== 'admin'); // Exclude admins as they have full access
+            setAvailableUsers(users);
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            // Error fetching users - continue with empty list
+            setAvailableUsers([]);
+        }
+    }, []);
+
     useEffect(() => {
         if (isOpen) {
             fetchAvailableUsers();
             fetchAvailableCompanies();
         }
-    }, [isOpen]);
+    }, [isOpen, fetchAvailableUsers, fetchAvailableCompanies]);
 
     useEffect(() => {
         // Filter companies based on input
@@ -60,38 +89,6 @@ export default function AddActivityModal({
             setShowCompanyDropdown(false);
         }
     }, [activity.company, availableCompanies]);
-
-    const fetchAvailableCompanies = async () => {
-        try {
-            const companies = await unifiedActivitiesService.getAllCompanies();
-            setAvailableCompanies(companies);
-        } catch (error) {
-            console.error('Error fetching companies:', error);
-        }
-    };
-
-    useEffect(() => {
-        if (isOpen) {
-            fetchAvailableUsers();
-        }
-    }, [isOpen]);
-
-    const fetchAvailableUsers = async () => {
-        try {
-            const usersQuery = query(
-                collection(db, 'users'),
-                where('isActive', '==', true)
-            );
-            const snapshot = await getDocs(usersQuery);
-            const users = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })).filter(user => user.role !== 'admin'); // Exclude admins as they have full access
-            setAvailableUsers(users);
-        } catch (error) {
-            // Error fetching users - continue with empty list
-        }
-    };
 
     const handleCompanySelect = (company) => {
         setActivity(prev => ({ ...prev, company }));

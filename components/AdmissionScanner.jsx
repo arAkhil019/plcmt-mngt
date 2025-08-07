@@ -28,20 +28,12 @@ export default function AdmissionScanner({
 }) {
   // Validate required props
   useEffect(() => {
-    console.log("AdmissionScanner props:", { activity, userProfile, isScriptLoaded });
-    
     if (!activity || !activity.id) {
       console.error("Invalid activity prop:", activity);
     }
     
     if (!userProfile) {
       console.error("userProfile is not provided");
-    } else {
-      console.log("userProfile:", {
-        id: userProfile.id,
-        name: userProfile.name,
-        email: userProfile.email
-      });
     }
   }, [activity, userProfile]);
 
@@ -363,7 +355,6 @@ export default function AdmissionScanner({
 
     // Capture userProfile at the beginning to prevent race conditions
     const currentUserProfile = userProfile;
-    console.log("Current userProfile at start:", currentUserProfile);
 
     if (!currentUserProfile || !currentUserProfile.id || !currentUserProfile.name) {
       setScanFeedback("User profile not available. Please try again.");
@@ -417,8 +408,6 @@ export default function AdmissionScanner({
       const allScannedAdmissions = [...cleanedExistingAdmissions, ...validatedNewAdmissions];
 
       // Double-check userProfile before making the update call
-      console.log("UserProfile before update call:", currentUserProfile);
-      
       if (!currentUserProfile.id || !currentUserProfile.name) {
         throw new Error("User profile became invalid during processing");
       }

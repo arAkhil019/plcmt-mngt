@@ -1,8 +1,9 @@
 // app/page.js
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import Script from "next/script";
+import Image from "next/image";
 import {
   QrCodeIcon,
   UsersIcon,
@@ -31,6 +32,7 @@ import UserManagement from "../components/UserManagement";
 import StudentManagement from "../components/StudentManagement";
 import ActivityLogsAdmin from "../components/ActivityLogsAdmin";
 import AdminCompanyManager from "../components/admin-company-manager";
+import AdminEmailManager from "../components/AdminEmailManager";
 import ToastContainer from "../components/ToastContainer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ProgressDialog from "../components/ProgressDialog";
@@ -154,29 +156,34 @@ const Badge = ({ children, className = "", variant = "default" }) => {
   );
 };
 
-const uiComponents = {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-  Button,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  Badge,
-};
-
 export default function Home() {
   const { user, userProfile, logout, loading } = useAuth();
   const { toasts, removeToast, showSuccess, showError, showWarning, showInfo } =
     useToast();
+  
+  // Memoize UI components to prevent infinite re-renders
+  const uiComponents = useMemo(() => ({
+    Card,
+    CardHeader,
+    CardTitle,
+    CardDescription,
+    CardContent,
+    CardFooter,
+    Button,
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+    Badge,
+  }), []);
+  
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [dashboardTab, setDashboardTab] = useState("active"); // New state for dashboard tabs
+  const [navigationStack, setNavigationStack] = useState([]); // Track navigation history for smart back navigation
+  const [selectedCompany, setSelectedCompany] = useState(null); // Track current company context for back navigation
+  const [dashboardStateRef, setDashboardStateRef] = useState(null); // Reference to dashboard state control functions
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [activities, setActivities] = useState([]);
@@ -321,7 +328,7 @@ export default function Home() {
         setIsLoadingActivities(false);
       }
     }
-  }, [user, userProfile, loading, showSuccess, showError]);
+  }, [user, userProfile, loading]);
 
   // All hooks must be called before any return or conditional logic
   const hasPermission = (requiredRole) => {
@@ -332,32 +339,19 @@ export default function Home() {
     return true;
   };
 
-  const canMarkAttendance = (activity) => {
+  const canMarkAttendance = useCallback((activity) => {
     if (userProfile?.role === "admin") return true;
     if (activity.createdBy === userProfile?.id) return true;
     return activity.allowedUsers?.some((u) => u.id === userProfile?.id);
-  };
+  }, [userProfile]);
 
   const handleSelectActivity = (activity) => {
-    // Check permissions before allowing access
-    if (!canMarkAttendance(activity) && activity.status !== "Inactive") {
-      showError(
-        "You do not have permission to mark attendance for this activity."
-      );
-      return;
-    }
-    setSelectedActivity(activity);
-    if (activity.status === "Inactive") {
-      setCurrentPage("view");
-    } else {
-      setCurrentPage("scanner");
-    }
+    handleSelectActivityWithNavigation(activity);
   };
 
   // New handler specifically for viewing attendance (scanned admissions + participants)
   const handleViewAttendance = (activity) => {
-    setSelectedActivity(activity);
-    setCurrentPage("view"); // Always go to attendance view regardless of status
+    handleSelectActivityWithNavigation(activity, "view");
   };
 
   const handleEditActivity = (activity) => {
@@ -553,7 +547,84 @@ export default function Home() {
   const handleBackToDashboard = () => {
     setCurrentPage("dashboard");
     setSelectedActivity(null);
+    setSelectedCompany(null);
+    setNavigationStack([]);
   };
+
+  // Smart navigation that keeps users in the activity context when appropriate
+  const handleSmartBack = useCallback((fromPage, options = {}) => {
+    const { forceBackToDashboard = false, activityUpdated = false } = options;
+    
+    // If activity was significantly updated (status change, etc), go back to dashboard
+    if (forceBackToDashboard || activityUpdated) {
+      handleBackToDashboard();
+      return;
+    }
+    
+    // Smart navigation based on current page
+    switch (fromPage) {
+      case "scanner":
+        // From scanner, go to view attendance of the same activity
+        if (selectedActivity) {
+          setCurrentPage("view");
+        } else {
+          handleBackToCompanyActivities();
+        }
+        break;
+        
+      case "view":
+        // From view, go back to company activities page
+        handleBackToCompanyActivities();
+        break;
+        
+      default:
+        // Default behavior - go to dashboard
+        handleBackToDashboard();
+        break;
+    }
+  }, [selectedActivity]);
+
+  // Navigate back to company activities page
+  const handleBackToCompanyActivities = useCallback(() => {
+    if (selectedActivity && dashboardStateRef) {
+      // Get the company from the current activity
+      const activityCompany = selectedActivity.company;
+      
+      // Use the dashboard state control to navigate to company activities
+      dashboardStateRef.navigateToCompanyActivities(activityCompany, selectedActivity.id);
+      
+      // Set page to dashboard and clear selected activity
+      setCurrentPage("dashboard");
+      setSelectedActivity(null);
+      setNavigationStack([]);
+    } else {
+      // Fallback to normal dashboard if no company context
+      handleBackToDashboard();
+    }
+  }, [selectedActivity, dashboardStateRef]);
+
+  // Enhanced activity selection with navigation tracking
+  const handleSelectActivityWithNavigation = useCallback((activity, targetPage = null) => {
+    // Check permissions before allowing access
+    if (!canMarkAttendance(activity) && activity.status !== "Inactive") {
+      showError(
+        "You do not have permission to mark attendance for this activity."
+      );
+      return;
+    }
+    
+    setSelectedActivity(activity);
+    
+    // Store company context for back navigation
+    setSelectedCompany(activity.company);
+    
+    // Determine target page
+    const newPage = targetPage || (activity.status === "Inactive" ? "view" : "scanner");
+    setCurrentPage(newPage);
+    
+    // Track navigation history
+    setNavigationStack(prev => [...prev, { page: newPage, activityId: activity.id, company: activity.company, timestamp: Date.now() }]);
+  }, [canMarkAttendance]);
 
   const handleMarkAttendance = useCallback(
     async (activityId, studentId) => {
@@ -597,21 +668,39 @@ export default function Home() {
         if (alreadyScanned) {
           showWarning(`Admission number ${studentId} has already been scanned.`);
           
-          // Log duplicate scan attempt
+          // Try to lookup student details for better logging
+          let studentDetails = null;
+          try {
+            const studentLookup = await studentsService.searchByAdmissionNumber(studentId);
+            if (studentLookup.found) {
+              studentDetails = studentLookup.student;
+            }
+          } catch (error) {
+            console.warn("Could not lookup student details for duplicate scan:", error);
+          }
+          
+          // Log duplicate scan attempt with enhanced details
           await activityLogsService.logAdmissionScanning(
             userProfile?.id || 'unknown',
             userProfile?.name || 'Unknown User',
             userProfile?.email || 'unknown@email.com',
             {
               admissionNumber: studentId,
+              studentName: studentDetails?.name || 'Unknown',
+              studentDepartment: studentDetails?.department || 'Unknown',
+              studentYear: studentDetails?.year || 'Unknown',
               companyId: activity.id,
               companyName: activity.company,
               activityId: activity.id,
               activityName: activity.activityName,
-              scanMethod: 'qr', // Assuming QR code scanning
+              scanMethod: 'qr',
               scanResult: 'duplicate',
               previouslyScanned: true,
-              scanDuration: null
+              scanDuration: null,
+              updateType: 'scannedAdmissions', // Which field would have been updated
+              totalScannedCount: currentScannedAdmissions.length, // Current count (no change)
+              attemptedBy: userProfile?.name || 'Unknown User',
+              attemptedAt: new Date().toISOString()
             }
           );
           
@@ -635,14 +724,27 @@ export default function Home() {
           userProfile
         );
 
-        // Log successful admission scanning
+        // Try to lookup student details for better logging
+        let studentDetails = null;
+        try {
+          const studentLookup = await studentsService.searchByAdmissionNumber(studentId);
+          if (studentLookup.found) {
+            studentDetails = studentLookup.student;
+          }
+        } catch (error) {
+          console.warn("Could not lookup student details:", error);
+        }
+
+        // Log successful admission scanning with enhanced details
         await activityLogsService.logAdmissionScanning(
           userProfile?.id || 'unknown',
           userProfile?.name || 'Unknown User',
           userProfile?.email || 'unknown@email.com',
           {
             admissionNumber: studentId,
-            studentName: 'Unknown', // Could be enhanced to lookup student name
+            studentName: studentDetails?.name || 'Unknown',
+            studentDepartment: studentDetails?.department || 'Unknown',
+            studentYear: studentDetails?.year || 'Unknown',
             companyId: activity.id,
             companyName: activity.company,
             activityId: activity.id,
@@ -650,12 +752,26 @@ export default function Home() {
             scanMethod: 'qr',
             scanResult: 'success',
             previouslyScanned: false,
-            scanDuration: null // Could be enhanced to track scan time
+            scanDuration: null,
+            updateType: 'scannedAdmissions', // Which field was updated
+            totalScannedCount: updatedScannedAdmissions.length, // Total count after this scan
+            scannedBy: userProfile?.name || 'Unknown User',
+            scannedAt: new Date().toISOString()
           }
         );
 
-        // Reload activities to reflect changes
-        await reloadActivities();
+        // Update local activity state instead of reloading all activities for minor updates
+        const updatedActivity = { ...activity, scannedAdmissions: updatedScannedAdmissions };
+        setSelectedActivity(updatedActivity);
+        
+        // Update the activity in the local activities array
+        setActivities(prevActivities => 
+          prevActivities.map(a => 
+            a.id === activity.id 
+              ? { ...a, scannedAdmissions: updatedScannedAdmissions }
+              : a
+          )
+        );
 
         showSuccess(`Admission number ${studentId} scanned successfully. Use "View Attendance" to map and mark students as present.`);
       } catch (error) {
@@ -1026,31 +1142,39 @@ export default function Home() {
     reader.readAsArrayBuffer(file);
   };
 
-  const DashboardWithUI = (props) => <Dashboard {...props} {...uiComponents} />;
-  const MarkAttendanceWithUI = (props) => (
+  const DashboardWithUI = useCallback((props) => 
+    <Dashboard {...props} {...uiComponents} />, [uiComponents]);
+    
+  const MarkAttendanceWithUI = useCallback((props) => (
     <MarkAttendance {...props} {...uiComponents} />
-  );
-  const AttendanceViewWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const AttendanceViewWithUI = useCallback((props) => (
     <AttendanceView {...props} {...uiComponents} userProfile={userProfile} />
-  );
-  const ColumnMappingModalWithUI = (props) => (
+  ), [uiComponents, userProfile]);
+  const ColumnMappingModalWithUI = useCallback((props) => (
     <ColumnMappingModal {...props} {...uiComponents} />
-  );
-  const AddActivityModalWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const AddActivityModalWithUI = useCallback((props) => (
     <AddActivityModal {...props} {...uiComponents} />
-  );
-  const EditActivityModalWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const EditActivityModalWithUI = useCallback((props) => (
     <EditActivityModal {...props} {...uiComponents} />
-  );
-  const UserManagementWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const UserManagementWithUI = useCallback((props) => (
     <UserManagement {...props} {...uiComponents} />
-  );
-  const StudentManagementWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const StudentManagementWithUI = useCallback((props) => (
     <StudentManagement {...props} uiComponents={uiComponents} />
-  );
-  const ActivityLogsWithUI = (props) => (
+  ), [uiComponents]);
+  
+  const ActivityLogsWithUI = useCallback((props) => (
     <ActivityLogsAdmin {...props} />
-  );
+  ), []);
 
   const handleLogout = async () => {
     try {
@@ -1125,9 +1249,11 @@ export default function Home() {
         <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
           <nav className="container mx-auto px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <img
+              <Image
                 src="/graduation-hat.svg"
                 alt="Placerly Logo"
+                width={24}
+                height={24}
                 className="h-5 w-5 sm:h-6 sm:w-6 object-contain"
               />
               <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
@@ -1342,6 +1468,7 @@ export default function Home() {
               isLoadingActivities={isLoadingActivities}
               activitiesError={activitiesError}
               onRefresh={reloadActivities}
+              onStateRefReady={setDashboardStateRef}
             />
           )}
           {currentPage === "users" && userProfile?.role === "admin" && (
@@ -1378,7 +1505,7 @@ export default function Home() {
             <MarkAttendanceWithUI
               activity={selectedActivity}
               userProfile={userProfile}
-              onBack={handleBackToDashboard}
+              onBack={() => handleSmartBack("scanner")}
               onMarkAttendance={handleMarkAttendance}
               isScriptLoaded={isScannerScriptLoaded}
             />
@@ -1386,7 +1513,7 @@ export default function Home() {
           {currentPage === "view" && selectedActivity && (
             <AttendanceViewWithUI
               company={selectedActivity}
-              onBack={handleBackToDashboard}
+              onBack={() => handleSmartBack("view")}
             />
           )}
         </main>
