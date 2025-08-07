@@ -332,15 +332,15 @@ export default function Home() {
 
   // All hooks must be called before any return or conditional logic
   const hasPermission = (requiredRole) => {
-    if (userProfile?.role === "admin") return true;
+    if (userProfile?.role === "admin" || userProfile?.role === "cpc") return true;
     if (requiredRole === "placement_coordinator") {
-      return userProfile?.role === "placement_coordinator";
+      return userProfile?.role === "placement_coordinator" || userProfile?.role === "cpc";
     }
     return true;
   };
 
   const canMarkAttendance = useCallback((activity) => {
-    if (userProfile?.role === "admin") return true;
+    if (userProfile?.role === "admin" || userProfile?.role === "cpc") return true;
     if (activity.createdBy === userProfile?.id) return true;
     return activity.allowedUsers?.some((u) => u.id === userProfile?.id);
   }, [userProfile]);
@@ -355,9 +355,10 @@ export default function Home() {
   };
 
   const handleEditActivity = (activity) => {
-    // Only admins and placement coordinators can edit, and only their own activities
+    // Only admins, CPCs, and placement coordinators can edit, and only their own activities (except admin/cpc)
     if (
       userProfile?.role !== "admin" &&
+      userProfile?.role !== "cpc" &&
       (userProfile?.role !== "placement_coordinator" ||
         (activity.createdById !== userProfile?.id &&
           activity.createdBy !== userProfile?.name))
@@ -1299,19 +1300,6 @@ export default function Home() {
                       🎓 Students
                     </Button>
                     <Button
-                      variant={
-                        currentPage === "companies" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setCurrentPage("companies");
-                        setSelectedActivity(null);
-                      }}
-                      size="sm"
-                    >
-                      <BuildingIcon className="h-4 w-4 mr-2" />
-                      Companies
-                    </Button>
-                    <Button
                       variant={currentPage === "logs" ? "default" : "outline"}
                       onClick={() => {
                         setCurrentPage("logs");
@@ -1323,6 +1311,21 @@ export default function Home() {
                       Logs
                     </Button>
                   </>
+                )}
+                {(userProfile?.role === "admin" || userProfile?.role === "cpc") && (
+                  <Button
+                    variant={
+                      currentPage === "companies" ? "default" : "outline"
+                    }
+                    onClick={() => {
+                      setCurrentPage("companies");
+                      setSelectedActivity(null);
+                    }}
+                    size="sm"
+                  >
+                    <BuildingIcon className="h-4 w-4 mr-2" />
+                    Companies
+                  </Button>
                 )}
               </div>
               
@@ -1405,21 +1408,6 @@ export default function Home() {
                       🎓 Students
                     </Button>
                     <Button
-                      variant={
-                        currentPage === "companies" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setCurrentPage("companies");
-                        setSelectedActivity(null);
-                        setMobileMenuOpen(false);
-                      }}
-                      size="sm"
-                      className="justify-start"
-                    >
-                      <BuildingIcon className="h-4 w-4 mr-2" />
-                      Companies
-                    </Button>
-                    <Button
                       variant={currentPage === "logs" ? "default" : "outline"}
                       onClick={() => {
                         setCurrentPage("logs");
@@ -1433,6 +1421,23 @@ export default function Home() {
                       Logs
                     </Button>
                   </>
+                )}
+                {(userProfile?.role === "admin" || userProfile?.role === "cpc") && (
+                  <Button
+                    variant={
+                      currentPage === "companies" ? "default" : "outline"
+                    }
+                    onClick={() => {
+                      setCurrentPage("companies");
+                      setSelectedActivity(null);
+                      setMobileMenuOpen(false);
+                    }}
+                    size="sm"
+                    className="justify-start"
+                  >
+                    <BuildingIcon className="h-4 w-4 mr-2" />
+                    Companies
+                  </Button>
                 )}
                 <div className="border-t pt-2">
                   <div className="text-sm text-gray-600 dark:text-gray-400 px-3 py-1">
@@ -1477,7 +1482,7 @@ export default function Home() {
           {currentPage === "students" && userProfile?.role === "admin" && (
             <StudentManagementWithUI />
           )}
-          {currentPage === "companies" && userProfile?.role === "admin" && (
+          {currentPage === "companies" && (userProfile?.role === "admin" || userProfile?.role === "cpc") && (
             <AdminCompanyManager
               Card={Card}
               CardHeader={CardHeader}

@@ -46,6 +46,12 @@ export default function UserManagement({
   const [emailLoading, setEmailLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  
+  // Filtering and search states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [editingUser, setEditingUser] = useState(null);
+  
   const { userProfile, addPreApprovedEmail } = useAuth();
 
   const [newUser, setNewUser] = useState({
@@ -75,6 +81,17 @@ export default function UserManagement({
       fetchPreApprovedEmails();
     }
   }, [activeTab]);
+
+  // Clear messages after 5 seconds
+  useEffect(() => {
+    if (message || error) {
+      const timer = setTimeout(() => {
+        setMessage('');
+        setError('');
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message, error]);
 
   const fetchUsers = async () => {
     try {
@@ -121,9 +138,61 @@ export default function UserManagement({
     }
   };
 
+  // Handle role change for a user
+  const handleRoleChange = async (userId, newRole) => {
+    try {
+      setLoading(true);
+      
+      // Prevent removing admin role from the main admin email
+      const user = users.find(u => u.id === userId);
+      if (user?.email === 'cbitplacementtraker@gmail.com' && newRole !== 'admin') {
+        alert('Cannot change role for the main admin account');
+        return;
+      }
+      
+      await updateDoc(doc(db, "users", userId), {
+        role: newRole,
+        updatedAt: new Date(),
+        updatedBy: userProfile.id
+      });
+      
+      setMessage(`User role updated to ${getRoleLabel(newRole)} successfully!`);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      setError("Failed to update user role");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getRoleLabel = (role) => {
+    const roleLabels = {
+      admin: 'Admin',
+      cpc: 'Chief Placement Coordinator',
+      placement_coordinator: 'Placement Coordinator',
+      attendance_marker: 'Attendance Marker'
+    };
+    return roleLabels[role] || role;
+  };
+
+  // Filter users based on search term and role filter
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = !searchTerm || 
+      user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.department?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    
+    return matchesSearch && matchesRole;
+  });
+
   const getRoleBadge = (role) => {
     const roleConfig = {
       admin: { variant: "default", label: "Admin" },
+      cpc: { variant: "destructive", label: "CPC" },
       placement_coordinator: { variant: "secondary", label: "PC" },
       attendance_marker: { variant: "success", label: "Marker" },
     };
@@ -404,6 +473,18 @@ export default function UserManagement({
         </div>
       </div>
 
+      {/* Success/Error Messages */}
+      {message && (
+        <div className="p-4 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800">
+          {message}
+        </div>
+      )}
+      {error && (
+        <div className="p-4 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800">
+          {error}
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div className="flex space-x-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
         <button
@@ -546,6 +627,7 @@ export default function UserManagement({
                         <option value="placement_coordinator">
                           Placement Coordinator
                         </option>
+                        <option value="cpc">Chief Placement Coordinator</option>
                         <option value="attendance_marker">Attendance Marker</option>
                       </select>
                     </div>
@@ -814,6 +896,37 @@ export default function UserManagement({
               <CardDescription className="text-base text-gray-600 dark:text-gray-400">
                 Overview of all users and their access levels
               </CardDescription>
+              
+              {/* Search and Filter Controls */}
+              <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, or department..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
+                  />
+                </div>
+                <div className="sm:w-48">
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
+                  >
+                    <option value="all">All Roles</option>
+                    <option value="admin">Admin</option>
+                    <option value="cpc">Chief Placement Coordinator</option>
+                    <option value="placement_coordinator">Placement Coordinator</option>
+                    <option value="attendance_marker">Attendance Marker</option>
+                  </select>
+                </div>
+              </div>
+              
+              {/* Results count */}
+              <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                Showing {filteredUsers.length} of {users.length} users
+              </div>
             </CardHeader>
             <CardContent className="px-0">
               {loading ? (
@@ -851,49 +964,108 @@ export default function UserManagement({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((user) => (
-                        <TableRow
-                          key={user.id}
-                          className="border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                        >
-                          <TableCell className="font-medium text-gray-900 dark:text-white py-4 px-6">
-                            {user.name}
-                          </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
-                            {user.email}
-                          </TableCell>
-                          <TableCell className="py-4 px-6">
-                            {getRoleBadge(user.role)}
-                          </TableCell>
-                          <TableCell className="py-4 px-6">
-                            <Badge
-                              variant={user.isActive ? "success" : "secondary"}
-                              className="font-medium"
-                            >
-                              {user.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
-                            {user.lastLogin
-                              ? new Date(
-                                  user.lastLogin.seconds * 1000
-                                ).toLocaleDateString()
-                              : "Never"}
-                          </TableCell>
-                          <TableCell className="py-4 px-6">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleToggleUserStatus(user.id, user.isActive)
-                              }
-                              className="px-4 py-2"
-                            >
-                              {user.isActive ? "Deactivate" : "Activate"}
-                            </Button>
+                      {filteredUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-gray-500 dark:text-gray-400">
+                            {searchTerm || roleFilter !== 'all' 
+                              ? 'No users match the current filters' 
+                              : 'No users found'
+                            }
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        filteredUsers.map((user) => (
+                          <TableRow
+                            key={user.id}
+                            className="border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                          >
+                            <TableCell className="font-medium text-gray-900 dark:text-white py-4 px-6">
+                              <div className="flex flex-col">
+                                <span>{user.name}</span>
+                                {user.department && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {user.department}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
+                              {user.email}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              <div className="flex items-center space-x-2">
+                                {getRoleBadge(user.role)}
+                                {userProfile?.role === 'admin' && user.email !== 'cbitplacementtraker@gmail.com' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setEditingUser(user.id)}
+                                    className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+                                    title="Edit role"
+                                  >
+                                    ✏️
+                                  </Button>
+                                )}
+                              </div>
+                              
+                              {/* Role editing dropdown */}
+                              {editingUser === user.id && (
+                                <div className="mt-2 space-y-2">
+                                  <select
+                                    value={user.role}
+                                    onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                                    className="text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800"
+                                  >
+                                    <option value="placement_coordinator">Placement Coordinator</option>
+                                    <option value="cpc">Chief Placement Coordinator</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="attendance_marker">Attendance Marker</option>
+                                  </select>
+                                  <div className="flex space-x-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setEditingUser(null)}
+                                      className="h-6 px-2 text-xs"
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              <Badge
+                                variant={user.isActive ? "success" : "secondary"}
+                                className="font-medium"
+                              >
+                                {user.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-gray-600 dark:text-gray-400 py-4 px-6">
+                              {user.lastLogin
+                                ? new Date(
+                                    user.lastLogin.seconds * 1000
+                                  ).toLocaleDateString()
+                                : "Never"}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleToggleUserStatus(user.id, user.isActive)
+                                }
+                                className="px-4 py-2"
+                                disabled={user.email === 'cbitplacementtraker@gmail.com'}
+                                title={user.email === 'cbitplacementtraker@gmail.com' ? 'Cannot deactivate main admin' : ''}
+                              >
+                                {user.isActive ? "Deactivate" : "Activate"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -971,6 +1143,7 @@ export default function UserManagement({
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
                     >
                       <option value="placement_coordinator">Placement Coordinator</option>
+                      <option value="cpc">Chief Placement Coordinator</option>
                       <option value="admin">Admin</option>
                     </select>
                   </div>
