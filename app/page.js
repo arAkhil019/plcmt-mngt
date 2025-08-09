@@ -11,6 +11,16 @@ import {
   LogOutIcon,
   MenuIcon,
   BuildingIcon,
+  CalendarIcon,
+  CheckCircleIcon,
+  UserIcon,
+  PlusIcon,
+  RefreshIcon,
+  EditIcon,
+  TrashIcon,
+  MapPinIcon,
+  ChevronDownIcon,
+  CheckIcon,
 } from "../components/icons";
 import { useAuth } from "../contexts/AuthContext";
 import { logActivity, ACTIVITY_TYPES } from "../utils/activityLogger";
@@ -156,6 +166,77 @@ const Badge = ({ children, className = "", variant = "default" }) => {
   );
 };
 
+// Select Components
+const Select = ({ children, value, onValueChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedValue, setSelectedValue] = useState(value);
+
+  const handleSelect = (newValue) => {
+    setSelectedValue(newValue);
+    setIsOpen(false);
+    if (onValueChange) {
+      onValueChange(newValue);
+    }
+  };
+
+  return (
+    <div className="relative">
+      {React.Children.map(children, child => 
+        React.cloneElement(child, { 
+          isOpen, 
+          setIsOpen, 
+          selectedValue, 
+          onSelect: handleSelect 
+        })
+      )}
+    </div>
+  );
+};
+
+const SelectTrigger = ({ children, className = "", isOpen, setIsOpen }) => (
+  <button
+    onClick={() => setIsOpen(!isOpen)}
+    className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:ring-offset-gray-950 dark:placeholder:text-gray-400 dark:focus:ring-gray-800 ${className}`}
+  >
+    {children}
+    <svg
+      className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  </button>
+);
+
+const SelectValue = ({ placeholder = "Select...", selectedValue }) => (
+  <span className="text-sm">
+    {selectedValue || placeholder}
+  </span>
+);
+
+const SelectContent = ({ children, isOpen, onSelect }) => {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="absolute top-full left-0 z-50 w-full min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white p-1 text-gray-950 shadow-md animate-in fade-in-0 zoom-in-95 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-50">
+      {React.Children.map(children, child =>
+        React.cloneElement(child, { onSelect })
+      )}
+    </div>
+  );
+};
+
+const SelectItem = ({ children, value, onSelect }) => (
+  <div
+    onClick={() => onSelect(value)}
+    className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:hover:bg-gray-800 dark:focus:bg-gray-800"
+  >
+    {children}
+  </div>
+);
+
 export default function Home() {
   const { user, userProfile, logout, loading } = useAuth();
   const { toasts, removeToast, showSuccess, showError, showWarning, showInfo } =
@@ -177,6 +258,11 @@ export default function Home() {
     TableHead,
     TableCell,
     Badge,
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
   }), []);
   
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -184,6 +270,7 @@ export default function Home() {
   const [navigationStack, setNavigationStack] = useState([]); // Track navigation history for smart back navigation
   const [selectedCompany, setSelectedCompany] = useState(null); // Track current company context for back navigation
   const [dashboardStateRef, setDashboardStateRef] = useState(null); // Reference to dashboard state control functions
+  const [pendingDashboardNavigation, setPendingDashboardNavigation] = useState(null); // Pending navigation for when dashboard mounts
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [activities, setActivities] = useState([]);
@@ -587,17 +674,24 @@ export default function Home() {
 
   // Navigate back to company activities page
   const handleBackToCompanyActivities = useCallback(() => {
-    if (selectedActivity && dashboardStateRef) {
-      // Get the company from the current activity
+    if (selectedActivity) {
+      // Get the company and activity ID before clearing state
       const activityCompany = selectedActivity.company;
+      const activityId = selectedActivity.id;
       
-      // Use the dashboard state control to navigate to company activities
-      dashboardStateRef.navigateToCompanyActivities(activityCompany, selectedActivity.id);
+      // Set pending navigation state that the Dashboard will pick up when it mounts
+      setPendingDashboardNavigation({
+        targetCompany: activityCompany,
+        targetActivityId: activityId,
+        targetView: "activities"
+      });
       
-      // Set page to dashboard and clear selected activity
-      setCurrentPage("dashboard");
+      // Clear selected activity and navigation stack
       setSelectedActivity(null);
       setNavigationStack([]);
+      
+      // Set the page to dashboard
+      setCurrentPage("dashboard");
     } else {
       // Fallback to normal dashboard if no company context
       handleBackToDashboard();
@@ -1474,6 +1568,8 @@ export default function Home() {
               activitiesError={activitiesError}
               onRefresh={reloadActivities}
               onStateRefReady={setDashboardStateRef}
+              pendingNavigation={pendingDashboardNavigation}
+              onNavigationComplete={() => setPendingDashboardNavigation(null)}
             />
           )}
           {currentPage === "users" && userProfile?.role === "admin" && (
@@ -1484,9 +1580,21 @@ export default function Home() {
           )}
           {currentPage === "companies" && (userProfile?.role === "admin" || userProfile?.role === "cpc") && (
             <AdminCompanyManager
+              BuildingIcon={BuildingIcon}
+              CalendarIcon={CalendarIcon}
+              CheckCircleIcon={CheckCircleIcon}
+              UserIcon={UserIcon}
+              PlusIcon={PlusIcon}
+              RefreshIcon={RefreshIcon}
+              EditIcon={EditIcon}
+              TrashIcon={TrashIcon}
+              MapPinIcon={MapPinIcon}
+              ChevronDownIcon={ChevronDownIcon}
+              CheckIcon={CheckIcon}
               Card={Card}
               CardHeader={CardHeader}
               CardTitle={CardTitle}
+              CardDescription={CardDescription}
               CardContent={CardContent}
               Button={Button}
               Badge={Badge}

@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
 import { companiesService } from "../lib/companiesService";
-import CompanyManagementModal from "./CompanyManagementModal";
 // Import all necessary icons
 import {
   UsersIcon,
@@ -16,7 +15,7 @@ import {
   PauseIcon,
   RefreshIcon,
   BuildingIcon,
-  PlusIcon,
+  ChevronDownIcon,
 } from "./icons";
 
 export default function Dashboard({
@@ -45,6 +44,9 @@ export default function Dashboard({
   onDashboardRefresh,
   // New callback to expose state control functions to parent
   onStateRefReady,
+  // Navigation props
+  pendingNavigation,
+  onNavigationComplete,
 }) {
   // State management
   const [viewMode, setViewMode] = useState("companies"); // "companies" or "activities"
@@ -55,56 +57,26 @@ export default function Dashboard({
   const [isLoadingCompanyActivities, setIsLoadingCompanyActivities] = useState(false);
   const [companiesError, setCompaniesError] = useState("");
   
-  // Company management state
-  const [showCompanyManagement, setShowCompanyManagement] = useState(false);
-  const [editingCompany, setEditingCompany] = useState(null);
-  
-  // Lazy loading state
-  const [lastCompanyDoc, setLastCompanyDoc] = useState(null);
-  const [hasMoreCompanies, setHasMoreCompanies] = useState(true);
-  const [loadingMoreCompanies, setLoadingMoreCompanies] = useState(false);
-  
   // Debouncing and optimization states
   const refreshTimeoutRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Define data loading functions first
-  const loadCompanies = useCallback(async (loadMore = false) => {
+  const loadCompanies = useCallback(async () => {
     try {
-      if (!loadMore) {
-        setIsLoadingCompanies(true);
-        setCompaniesError("");
-      } else {
-        setLoadingMoreCompanies(true);
-      }
+      setIsLoadingCompanies(true);
+      setCompaniesError("");
       
-      // Use lazy loading for initial load and load more
-      const result = await companiesService.getCompaniesWithLazyLoading(
-        10, // Load 10 companies at a time
-        loadMore ? lastCompanyDoc : null
-      );
-      
-      if (loadMore) {
-        setCompanies(prev => [...prev, ...result.companies]);
-      } else {
-        setCompanies(result.companies);
-      }
-      
-      setLastCompanyDoc(result.lastVisible);
-      setHasMoreCompanies(result.hasMore);
+      // Load companies normally
+      const companiesData = await companiesService.getCompaniesWithCounts();
+      setCompanies(companiesData);
     } catch (error) {
       console.error("Error loading companies:", error);
-      if (!loadMore) {
-        setCompaniesError("Failed to load companies");
-      }
+      setCompaniesError("Failed to load companies");
     } finally {
-      if (loadMore) {
-        setLoadingMoreCompanies(false);
-      } else {
-        setIsLoadingCompanies(false);
-      }
+      setIsLoadingCompanies(false);
     }
-  }, []); // Remove lastCompanyDoc dependency to prevent infinite loop
+  }, []);
 
   const loadCompanyActivities = useCallback(async (companyId) => {
     try {
@@ -119,10 +91,45 @@ export default function Dashboard({
     }
   }, []);
 
-  // Load companies on component mount
+  // Load companies on component mount - use empty dependency array to prevent infinite loops
   useEffect(() => {
     loadCompanies();
-  }, [loadCompanies]);
+  }, []); // Empty dependency array to prevent infinite loops
+
+  // Handle pending navigation from parent component
+  useEffect(() => {
+    if (pendingNavigation && companies.length > 0) {
+      const { targetCompany, targetActivityId, targetView } = pendingNavigation;
+      
+      if (targetView === "activities" && targetCompany) {
+        // Find the company by name
+        const company = companies.find(c => c.name === targetCompany);
+        if (company) {
+          console.log(`🎯 [DASHBOARD] Executing pending navigation to ${targetCompany} activities`);
+          setSelectedCompany(company);
+          setViewMode("activities");
+          loadCompanyActivities(company.id).then(() => {
+            // Scroll to the target activity if specified
+            if (targetActivityId) {
+              setTimeout(() => {
+                const activityElement = document.getElementById(`activity-${targetActivityId}`);
+                if (activityElement) {
+                  activityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 200);
+            }
+          });
+          
+          // Notify parent that navigation is complete
+          if (onNavigationComplete) {
+            onNavigationComplete();
+          }
+        } else {
+          console.warn(`🚨 [DASHBOARD] Company "${targetCompany}" not found for pending navigation`);
+        }
+      }
+    }
+  }, [pendingNavigation, companies, onNavigationComplete]);
 
   // Optimized debounced refresh function with better state management
   const debouncedRefresh = useCallback((delay = 500) => {
@@ -156,7 +163,7 @@ export default function Dashboard({
     }, delay);
     
     refreshTimeoutRef.current = newTimeout;
-  }, [selectedCompany, isRefreshing, viewMode, loadCompanyActivities]); // Remove loadCompanies to prevent loops
+  }, [selectedCompany, isRefreshing, viewMode]); // Remove function dependencies to prevent loops
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -183,94 +190,37 @@ export default function Dashboard({
     setCompanyActivities([]);
   };
 
-  // Company management functions
-  const handleAddCompany = () => {
-    setEditingCompany(null);
-    setShowCompanyManagement(true);
-  };
-
-  const handleEditCompany = (company) => {
-    setEditingCompany(company);
-    setShowCompanyManagement(true);
-  };
-
-  const handleDeleteCompany = async (companyId) => {
-    if (!userProfile || (userProfile.role !== "admin" && userProfile.role !== "cpc")) {
-      alert("Only administrators can delete companies");
-      return;
-    }
-
-    if (window.confirm("Are you sure you want to delete this company? This action cannot be undone.")) {
-      try {
-        await companiesService.deleteCompany(companyId, userProfile.id);
-        await loadCompanies(); // Refresh the companies list
-      } catch (error) {
-        console.error("Error deleting company:", error);
-        alert("Failed to delete company. Please try again.");
-      }
-    }
-  };
-
-  const handleCompanyManagementClose = () => {
-    setShowCompanyManagement(false);
-    setEditingCompany(null);
-  };
-
-  const handleCompanyManagementSuccess = async () => {
-    await loadCompanies(); // Refresh the companies list
-    handleCompanyManagementClose();
-  };
-
-  const handleLoadMoreCompanies = () => {
-    if (hasMoreCompanies && !loadingMoreCompanies) {
-      loadCompanies(true);
-    }
-  };
-
   // State control functions to be exposed to parent component
   const stateControlFunctions = useCallback(() => ({
     navigateToCompanyActivities: async (companyName, activityId) => {
       try {
-        // Get current companies state to avoid dependency issues
-        setViewMode("activities");
-        
-        // Find the company by name from current state
-        const findAndSelectCompany = (currentCompanies) => {
-          const company = currentCompanies.find(c => c.name === companyName);
-          if (company) {
-            setSelectedCompany(company);
-            loadCompanyActivities(company.id);
-            
-            // Optional: Scroll to the specific activity if needed
-            if (activityId) {
-              setTimeout(() => {
-                const activityElement = document.getElementById(`activity-${activityId}`);
-                if (activityElement) {
-                  activityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-              }, 100);
-            }
-            return true;
-          }
-          return false;
-        };
-        
-        // Try with current companies first
-        setCompanies(currentCompanies => {
-          if (findAndSelectCompany(currentCompanies)) {
-            return currentCompanies;
-          }
+        // Find the company by name
+        const company = companies.find(c => c.name === companyName);
+        if (company) {
+          // Set the company and switch to activities view
+          setSelectedCompany(company);
+          setViewMode("activities");
+          await loadCompanyActivities(company.id);
           
-          // If not found, reload companies
-          loadCompanies().then(() => {
-            setCompanies(updatedCompanies => {
-              findAndSelectCompany(updatedCompanies);
-              return updatedCompanies;
-            });
-          });
-          
-          return currentCompanies;
-        });
+          // Optional: Scroll to the specific activity if needed
+          if (activityId) {
+            setTimeout(() => {
+              const activityElement = document.getElementById(`activity-${activityId}`);
+              if (activityElement) {
+                activityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          }
+        } else {
+          // Fallback: load companies first if not found
+          await loadCompanies();
+          const updatedCompany = companies.find(c => c.name === companyName);
+          if (updatedCompany) {
+            setSelectedCompany(updatedCompany);
+            setViewMode("activities");
+            await loadCompanyActivities(updatedCompany.id);
+          }
+        }
       } catch (error) {
         console.error('Error navigating to company activities:', error);
         // Fallback to companies view
@@ -281,7 +231,7 @@ export default function Dashboard({
     setDashboardSelectedCompany: setSelectedCompany,
     loadDashboardCompanies: loadCompanies,
     loadDashboardCompanyActivities: loadCompanyActivities
-  }), [loadCompanies, loadCompanyActivities]);
+  }), [companies]); // Only include companies dependency to prevent function loops
 
   // Expose state control functions to parent
   useEffect(() => {
@@ -298,11 +248,12 @@ export default function Dashboard({
     Cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   };
 
-  // Check if user can manage activities (admin or creator)
+  // Check if user can manage activities (admin, cpc, or creator)
   const canManageActivity = (activity) => {
     if (!userProfile) return false;
     return (
-      (userProfile.role === "admin" || userProfile.role === "cpc") ||
+      userProfile.role === "admin" ||
+      userProfile.role === "cpc" ||
       activity.createdById === userProfile.id ||
       activity.createdBy === userProfile.name
     );
@@ -399,7 +350,7 @@ export default function Dashboard({
         }
       }, 500);
     }
-  }, [updateActivityStatusOptimistically, onChangeActivityStatus, viewMode, selectedCompany, loadCompanyActivities, isRefreshing]); // Remove loadCompanies to prevent loops
+  }, [updateActivityStatusOptimistically, onChangeActivityStatus, viewMode, selectedCompany, loadCompanyActivities, loadCompanies, isRefreshing]);
 
   // Expose debounced refresh to parent component
   useEffect(() => {
@@ -452,17 +403,6 @@ export default function Dashboard({
             </div>
             
             <div className="flex items-center gap-2">
-              {userProfile && (userProfile.role === "admin" || userProfile.role === "cpc") && (
-                <Button
-                  onClick={handleAddCompany}
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-2"
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  Add Company
-                </Button>
-              )}
               <Button
                 onClick={() => debouncedRefresh(0)} // Immediate refresh when manually triggered
                 disabled={isLoadingCompanies || isRefreshing}
@@ -563,72 +503,21 @@ export default function Dashboard({
                     </div>
 
                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                      <div className="flex gap-2">
-                        <Button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCompanySelect(company);
-                          }}
-                          variant="outline" 
-                          size="sm" 
-                          className="flex-1 text-xs"
-                        >
-                          View Activities ({company.totalActivities || 0})
-                        </Button>
-                        {userProfile && (userProfile.role === "admin" || userProfile.role === "cpc") && (
-                          <div className="flex gap-1">
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditCompany(company);
-                              }}
-                              variant="outline"
-                              size="sm"
-                              className="p-2"
-                            >
-                              <EditIcon className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteCompany(company.id);
-                              }}
-                              variant="outline"
-                              size="sm"
-                              className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
-                            >
-                              <TrashIcon className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
+                      <Button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCompanySelect(company);
+                        }}
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full text-xs"
+                      >
+                        View Activities ({company.totalActivities || 0})
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
               ))}
-            </div>
-          )}
-
-          {/* Load More Companies Button */}
-          {!isLoadingCompanies && !companiesError && companies.length > 0 && hasMoreCompanies && (
-            <div className="text-center pt-6">
-              <Button
-                onClick={handleLoadMoreCompanies}
-                disabled={loadingMoreCompanies}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                {loadingMoreCompanies ? (
-                  <>
-                    <RefreshIcon className="h-4 w-4 animate-spin" />
-                    Loading more companies...
-                  </>
-                ) : (
-                  <>
-                    Load More Companies
-                  </>
-                )}
-              </Button>
             </div>
           )}
 
@@ -748,7 +637,8 @@ export default function Dashboard({
                       </div>
 
                       <div className="mt-3 sm:mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                        <div className="flex flex-wrap gap-1 sm:gap-2 justify-end">
+                        {/* Primary Actions Row - Full Width */}
+                        <div className="flex gap-2 mb-3">
                           {onViewAttendance && (
                             <Button
                               onClick={(e) => {
@@ -756,11 +646,11 @@ export default function Dashboard({
                                 onViewAttendance(activity);
                               }}
                               size="sm"
-                              variant="outline"
-                              className="flex items-center gap-1 text-xs px-2 py-1"
+                              variant="default"
+                              className="flex-1 flex items-center justify-center gap-1.5 text-sm px-3 py-2.5 h-auto bg-blue-600 hover:bg-blue-700 text-white min-h-[38px]"
                             >
-                              <CheckCircleIcon className="h-3 w-3" />
-                              <span className="hidden sm:inline">View</span>
+                              <CheckCircleIcon className="h-4 w-4 flex-shrink-0" />
+                              <span className="font-medium">View</span>
                             </Button>
                           )}
 
@@ -770,84 +660,113 @@ export default function Dashboard({
                               onSelectActivity(activity);
                             }}
                             size="sm"
-                            variant="outline"
-                            className="flex items-center gap-1 text-xs px-2 py-1"
+                            variant="default"
+                            className="flex-1 flex items-center justify-center gap-1.5 text-sm px-3 py-2.5 h-auto bg-green-600 hover:bg-green-700 text-white min-h-[38px]"
                           >
-                            <QrCodeIcon className="h-3 w-3" />
-                            <span className="hidden sm:inline">Scan</span>
+                            <QrCodeIcon className="h-4 w-4 flex-shrink-0" />
+                            <span className="font-medium">Scan</span>
                           </Button>
-
-                          {canManageActivity(activity) && (
-                            <>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const newStatus = activity.status === "Active" ? "Inactive" : "Active";
-                                  handleActivityStatusChange(activity, newStatus);
-                                }}
-                                size="sm"
-                                variant="outline"
-                                className={`flex items-center gap-1 text-xs px-2 py-1 ${
-                                  activity.status === "Active" 
-                                    ? "text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-900/20" 
-                                    : "text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/20"
-                                }`}
-                                title={activity.status === "Active" ? "Pause Activity" : "Activate Activity"}
-                              >
-                                {activity.status === "Active" ? (
-                                  <PauseIcon className="h-3 w-3" />
-                                ) : (
-                                  <PlayIcon className="h-3 w-3" />
-                                )}
-                                <span className="hidden sm:inline">
-                                  {activity.status === "Active" ? "Pause" : "Start"}
-                                </span>
-                              </Button>
-
-                              {activity.status !== "Completed" && activity.status !== "Cancelled" && (
-                                <Button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleActivityStatusChange(activity, "Completed");
-                                  }}
-                                  size="sm"
-                                  variant="outline"
-                                  className="flex items-center gap-1 text-xs px-2 py-1 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/20"
-                                  title="Mark as Completed"
-                                >
-                                  <CheckCircleIcon className="h-3 w-3" />
-                                  <span className="hidden sm:inline">Complete</span>
-                                </Button>
-                              )}
-
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditActivity(activity);
-                                }}
-                                size="sm"
-                                variant="outline"
-                                className="flex items-center gap-1 text-xs px-2 py-1"
-                              >
-                                <EditIcon className="h-3 w-3" />
-                                <span className="hidden sm:inline">Edit</span>
-                              </Button>
-
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteActivity(activity);
-                                }}
-                                size="sm"
-                                variant="outline"
-                                className="flex items-center gap-1 text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
-                              >
-                                <TrashIcon className="h-3 w-3" />
-                                <span className="hidden sm:inline">Delete</span>
-                              </Button>
-                            </>
-                          )}
                         </div>
+
+                        {/* Secondary Actions - Edit + Dropdown */}
+                        {canManageActivity(activity) && (
+                          <div className="flex gap-2">
+                            {/* Status Toggle Button - Medium */}
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newStatus = activity.status === "Active" ? "Inactive" : "Active";
+                                handleActivityStatusChange(activity, newStatus);
+                              }}
+                              size="sm"
+                              variant="outline"
+                              className={`flex-1 flex items-center justify-center gap-1.5 text-sm px-3 py-2.5 h-auto border-2 min-h-[36px] ${
+                                activity.status === "Active" 
+                                  ? "border-orange-300 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:border-orange-600 dark:text-orange-400 dark:hover:bg-orange-900/20" 
+                                  : "border-green-300 text-green-600 hover:text-green-700 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/20"
+                              }`}
+                              title={activity.status === "Active" ? "Pause Activity" : "Activate Activity"}
+                            >
+                              {activity.status === "Active" ? (
+                                <PauseIcon className="h-4 w-4 flex-shrink-0" />
+                              ) : (
+                                <PlayIcon className="h-4 w-4 flex-shrink-0" />
+                              )}
+                              <span className="font-medium">
+                                {activity.status === "Active" ? "Pause" : "Start"}
+                              </span>
+                            </Button>
+
+                            {/* Edit Button - Larger */}
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditActivity(activity);
+                              }}
+                              size="sm"
+                              variant="outline"
+                              className="flex-[2] flex items-center justify-center gap-1.5 text-sm px-3 py-2.5 h-auto border-2 border-blue-300 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/20 min-h-[36px]"
+                            >
+                              <EditIcon className="h-4 w-4 flex-shrink-0" />
+                              <span className="font-medium">Edit</span>
+                            </Button>
+
+                            {/* Actions Dropdown - Click Triggered */}
+                            <div className="relative">
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const dropdownId = `dropdown-${activity.id}`;
+                                  const dropdown = document.getElementById(dropdownId);
+                                  if (dropdown) {
+                                    dropdown.classList.toggle('hidden');
+                                  }
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="px-2 py-2.5 h-auto border-2 border-gray-300 text-gray-600 hover:text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800 min-h-[36px]"
+                              >
+                                <ChevronDownIcon className="h-4 w-4" />
+                              </Button>
+                              
+                              {/* Dropdown Menu - Click Triggered */}
+                              <div 
+                                id={`dropdown-${activity.id}`}
+                                className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 hidden"
+                              >
+                                <div className="py-1">
+                                  {activity.status !== "Completed" && activity.status !== "Cancelled" && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleActivityStatusChange(activity, "Completed");
+                                        document.getElementById(`dropdown-${activity.id}`).classList.add('hidden');
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20 text-left"
+                                    >
+                                      <CheckCircleIcon className="h-4 w-4 flex-shrink-0" />
+                                      Mark Complete
+                                    </button>
+                                  )}
+                                  
+                                  <hr className="my-1 border-gray-200 dark:border-gray-600" />
+                                  
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteActivity(activity);
+                                      document.getElementById(`dropdown-${activity.id}`).classList.add('hidden');
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 text-left"
+                                  >
+                                    <TrashIcon className="h-4 w-4 flex-shrink-0" />
+                                    Delete Activity
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -870,17 +789,6 @@ export default function Dashboard({
             </div>
           )}
         </>
-      )}
-
-      {/* Company Management Modal */}
-      {showCompanyManagement && (
-        <CompanyManagementModal
-          isOpen={showCompanyManagement}
-          onClose={handleCompanyManagementClose}
-          onSuccess={handleCompanyManagementSuccess}
-          company={editingCompany}
-          userProfile={userProfile}
-        />
       )}
     </div>
   );

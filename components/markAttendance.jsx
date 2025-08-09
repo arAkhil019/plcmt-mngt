@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { unifiedActivitiesService } from "../lib/unifiedActivitiesService.js";
 import { studentsService } from "../lib/studentsService.js";
+import { cacheUtils } from "../lib/cacheUtils.js";
 import {
   QrCodeIcon,
   UsersIcon,

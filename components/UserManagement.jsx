@@ -13,7 +13,7 @@ import {
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import AdminUserForm from "./AdminUserForm";
-import { MailIcon, ClipboardIcon } from "./icons";
+import { MailIcon, ClipboardIcon, DownloadIcon, EditIcon } from "./icons";
 
 export default function UserManagement({
   Card,
@@ -721,7 +721,8 @@ export default function UserManagement({
                         disabled={!isXlsxScriptLoaded}
                         className="text-blue-600 border-blue-300 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-900/20"
                       >
-                        📥 Download Template
+                        <DownloadIcon className="h-4 w-4 mr-2" />
+                        Download Template
                       </Button>
                     </div>
                   </div>
@@ -1000,10 +1001,10 @@ export default function UserManagement({
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setEditingUser(user.id)}
-                                    className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+                                    className="h-10 w-10 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
                                     title="Edit role"
                                   >
-                                    ✏️
+                                    <EditIcon className="h-6 w-6" />
                                   </Button>
                                 )}
                               </div>

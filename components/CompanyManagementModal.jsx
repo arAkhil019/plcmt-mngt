@@ -284,8 +284,8 @@ export default function CompanyManagementModal({
                   </Button>
                 </div>
 
-                {/* Delete Button (only when editing) */}
-                {isEditing && userProfile?.role === 'admin' && (
+                {/* Delete Button (only when editing, admin and CPC) */}
+                {isEditing && (userProfile?.role === 'admin' || userProfile?.role === 'cpc') && (
                   <Button
                     type="button"
                     onClick={handleDelete}

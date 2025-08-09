@@ -546,8 +546,8 @@ export default function EditActivityModal({
           </CardContent>
           <CardFooter className="justify-between">
             <div>
-              {/* Admin-only delete button */}
-              {userProfile?.role === "admin" && (
+              {/* Admin and CPC delete button */}
+              {(userProfile?.role === "admin" || userProfile?.role === "cpc") && (
                 <Button
                   type="button"
                   variant="outline"

@@ -1,7 +1,8 @@
 // components/attendance-view.jsx
-import React, { useState, useEffect } from "react";
-import { unifiedActivitiesService } from "../lib/unifiedActivitiesService.js";
-import { studentsService } from "../lib/studentsService.js";
+import React, { useState, useEffect, useCallback } from "react";
+import { unifiedActivitiesService } from "../lib/unifiedActivitiesService";
+import { studentsService } from "../lib/studentsService";
+import { cacheUtils } from "../lib/cacheUtils";
 import { activityLogsService } from "../lib/activityLogsService.js";
 import {
   ArrowLeftIcon,
@@ -47,6 +48,7 @@ export default function AttendanceView({
   // Check if user has permission to manage attendance
   const canManageAttendance = () => {
     if (userProfile?.role === "admin") return true;
+    if (userProfile?.role === "cpc") return true;
     if (activity.createdBy === userProfile?.id) return true;
     if (activity.createdById === userProfile?.id) return true;
     return activity.allowedUsers?.some((u) => u.id === userProfile?.id);
@@ -112,11 +114,32 @@ export default function AttendanceView({
       });
 
       // Step 2: Search database for admission numbers not in the current participants list
+      // Use optimized cache-aware search for better performance
       let searchResults = { found: [], notFound: [], errors: [] };
       if (needToSearch.length > 0) {
-        searchResults = await studentsService.batchSearchByAdmissionNumbers(
+        console.log(`Searching for ${needToSearch.length} students using optimized search...`);
+        
+        // Use cache optimization to determine best search method
+        const optimization = await cacheUtils.optimizeSearchMethod(needToSearch);
+        console.log(`Using ${optimization.method} search method: ${optimization.reason}`);
+        
+        // Perform the optimized search with performance monitoring
+        const searchOperation = () => studentsService.batchSearchByAdmissionNumbers(
+          needToSearch,
+          optimization.options
+        );
+        
+        const { result, performance } = await cacheUtils.monitorCachePerformance(
+          searchOperation,
           needToSearch
         );
+        
+        if (result) {
+          searchResults = result;
+          console.log(`Search completed in ${performance?.duration}ms for ${needToSearch.length} students`);
+        } else {
+          throw new Error("Search operation failed");
+        }
       }
 
       // Step 3: Prepare attendance updates for existing and new participants
