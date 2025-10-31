@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "export": "next build",
-    "deploy": "npm run export && firebase deploy --only hosting"
+  "deploy": "npm run export && firebase deploy --only hosting",
+  "gen:docx": "node scripts/generate-docx.js"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -17,7 +18,8 @@
     "next": "15.4.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "xlsx": "^0.18.5"
+  "xlsx": "^0.18.5",
+  "docx": "^9.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

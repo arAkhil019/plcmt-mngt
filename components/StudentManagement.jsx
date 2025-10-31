@@ -5,13 +5,17 @@ import { ExcelProcessor } from '../lib/excelProcessor';
 import { useAuth } from '../contexts/AuthContext';
 import { activityLogsService, ACTIVITY_LOG_TYPES } from '../lib/activityLogsService';
 import StudentImportModal from './StudentImportModal';
+import StudentMergeModal from './StudentMergeModal';
+import AdminCollectionManager from './AdminCollectionManager';
+import CollectionCodeMapper from './CollectionCodeMapper';
 import * as XLSX from 'xlsx';
 
 export default function StudentManagement({ uiComponents }) {
   const { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Button, Badge, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } = uiComponents;
   const { userProfile } = useAuth();
   
-  const [currentView, setCurrentView] = useState('overview'); // overview, department, import
+  const [currentView, setCurrentView] = useState('overview'); // overview, department, import, admin
+  const [adminSubView, setAdminSubView] = useState('collections'); // collections, mapping
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [departments, setDepartments] = useState([]);
   const [students, setStudents] = useState([]);
@@ -26,6 +30,11 @@ export default function StudentManagement({ uiComponents }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Merge import states
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeFileData, setMergeFileData] = useState(null);
+  const [existingDepartments, setExistingDepartments] = useState([]);
 
   useEffect(() => {
     loadInitialData();
@@ -97,7 +106,36 @@ export default function StudentManagement({ uiComponents }) {
     }
   };
 
-  const handleImportConfirm = async (departmentData) => {
+  const handleMergeFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      setError('');
+      
+      const result = await ExcelProcessor.processStudentExcel(file);
+      setMergeFileData(result);
+      
+      // Get existing departments for comparison
+      const overviewData = await studentsService.getDepartmentsOverview();
+      setExistingDepartments(overviewData.departments);
+      
+      setShowMergeModal(true);
+      
+      if (result.errors.length > 0) {
+        setError(`File processed with warnings: ${result.errors.join(', ')}`);
+      } else {
+        setSuccess(`File ready for merge! Found ${result.totalRows} total rows across ${result.sheetNames.length} sheets.`);
+      }
+    } catch (error) {
+      setError(`Failed to process file: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportConfirm = async (departmentData, comparisonSettings = {}) => {
     if (!userProfile) return;
 
     try {
@@ -108,26 +146,70 @@ export default function StudentManagement({ uiComponents }) {
       
       for (const [department, students] of Object.entries(departmentData)) {
         try {
-          const importedStudents = await studentsService.bulkImportStudents(
-            students, 
-            department, 
-            userProfile
-          );
-          results.push(`${department}: ${importedStudents.length} students imported`);
+          const departmentSettings = comparisonSettings[department];
+          let importedStudents;
           
-          // Log the import activity
-          await activityLogsService.logActivity({
-            userId: userProfile.id,
-            userName: userProfile.name,
-            userEmail: userProfile.email,
-            action: ACTIVITY_LOG_TYPES.BULK_IMPORT_STUDENTS,
-            description: `Imported ${importedStudents.length} students to ${department}`,
-            metadata: {
+          // Use enhanced import with comparison if settings are provided
+          if (departmentSettings && departmentSettings.enableComparison) {
+            const enhancedResult = await studentsService.bulkImportWithDepartmentComparison(
+              students,
               department,
-              studentCount: importedStudents.length,
-              fileName: importFile?.name
-            }
-          });
+              userProfile,
+              {
+                enableDepartmentComparison: true,
+                referenceCollections: departmentSettings.referenceCollections,
+                addMissingStudents: departmentSettings.addMissingStudents,
+                mergeStrategy: 'merge'
+              }
+            );
+            
+            importedStudents = enhancedResult.newStudents || [];
+            const comparisonSummary = enhancedResult.comparisonResults ? 
+              ` (${enhancedResult.studentsAddedByComparison} added from comparison)` : '';
+            
+            results.push(`${department}: ${enhancedResult.added} added, ${enhancedResult.updated} updated${comparisonSummary}`);
+            
+            // Log enhanced import activity
+            await activityLogsService.logActivity({
+              userId: userProfile.id,
+              userName: userProfile.name,
+              userEmail: userProfile.email,
+              action: ACTIVITY_LOG_TYPES.BULK_IMPORT_STUDENTS,
+              description: `Enhanced import to ${department}: ${enhancedResult.added} added, ${enhancedResult.updated} updated, ${enhancedResult.studentsAddedByComparison} from comparison`,
+              metadata: {
+                department,
+                enhancedImport: true,
+                comparisonEnabled: true,
+                referenceCollections: departmentSettings.referenceCollections,
+                originalCount: enhancedResult.originalCount,
+                enhancedCount: enhancedResult.enhancedCount,
+                comparisonResults: enhancedResult.comparisonResults,
+                fileName: importFile?.name
+              }
+            });
+          } else {
+            // Use standard import
+            importedStudents = await studentsService.bulkImportStudents(
+              students, 
+              department, 
+              userProfile
+            );
+            results.push(`${department}: ${importedStudents.length} students imported`);
+            
+            // Log standard import activity
+            await activityLogsService.logActivity({
+              userId: userProfile.id,
+              userName: userProfile.name,
+              userEmail: userProfile.email,
+              action: ACTIVITY_LOG_TYPES.BULK_IMPORT_STUDENTS,
+              description: `Imported ${importedStudents.length} students to ${department}`,
+              metadata: {
+                department,
+                studentCount: importedStudents.length,
+                fileName: importFile?.name
+              }
+            });
+          }
         } catch (error) {
           results.push(`${department}: Failed - ${error.message}`);
         }
@@ -145,6 +227,124 @@ export default function StudentManagement({ uiComponents }) {
       
     } catch (error) {
       setError(`Import failed: ${error.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleMergeConfirm = async (mergeConfig) => {
+    if (!userProfile) return;
+
+    try {
+      setImporting(true);
+      setError('');
+      setShowMergeModal(false);
+      
+      const allResults = [];
+      let totalAdded = 0, totalUpdated = 0, totalSkipped = 0;
+      const departmentSummaries = [];
+      
+      for (const [excelDepartment, students] of Object.entries(mergeConfig.fileData.departmentGroups)) {
+        const strategy = mergeConfig.mergeStrategy[excelDepartment] || 'merge';
+        
+        try {
+          const importResult = await studentsService.bulkImportWithMerge(
+            students, 
+            excelDepartment, 
+            userProfile,
+            strategy
+          );
+          
+          totalAdded += importResult.added;
+          totalUpdated += importResult.updated;
+          totalSkipped += importResult.skipped;
+          
+          allResults.push({
+            department: excelDepartment,
+            strategy: strategy,
+            ...importResult
+          });
+
+          // Create detailed department summary
+          const deptSummary = {
+            department: excelDepartment,
+            strategy: strategy,
+            beforeCount: importResult.summary.beforeImport,
+            afterCount: importResult.summary.afterImport,
+            newStudents: importResult.newStudents,
+            updatedStudents: importResult.updatedStudents,
+            skippedStudents: importResult.skippedStudents,
+            stats: {
+              added: importResult.added,
+              updated: importResult.updated,
+              skipped: importResult.skipped
+            }
+          };
+          departmentSummaries.push(deptSummary);
+          
+          // Log the merge activity with detailed information
+          await activityLogsService.logActivity({
+            userId: userProfile.id,
+            userEmail: userProfile.email,
+            type: ACTIVITY_LOG_TYPES.STUDENT_BULK_IMPORT,
+            description: `Merged students into ${excelDepartment}: ${importResult.added} new, ${importResult.updated} updated, ${importResult.skipped} skipped (${importResult.summary.beforeImport} → ${importResult.summary.afterImport} total)`,
+            metadata: {
+              department: excelDepartment,
+              strategy: strategy,
+              stats: importResult.summary,
+              newStudents: importResult.newStudents.map(s => ({ name: s.name, rollNumber: s.rollNumber, admissionNumber: s.admissionNumber })),
+              departmentGrowth: {
+                before: importResult.summary.beforeImport,
+                after: importResult.summary.afterImport,
+                growth: importResult.summary.afterImport - importResult.summary.beforeImport
+              }
+            }
+          });
+        } catch (departmentError) {
+          console.error(`Error importing ${excelDepartment}:`, departmentError);
+          allResults.push({
+            department: excelDepartment,
+            strategy: strategy,
+            error: departmentError.message,
+            added: 0,
+            updated: 0,
+            skipped: 0,
+            summary: { beforeImport: 0, afterImport: 0 }
+          });
+          
+          departmentSummaries.push({
+            department: excelDepartment,
+            strategy: strategy,
+            error: departmentError.message,
+            stats: { added: 0, updated: 0, skipped: 0 }
+          });
+        }
+      }
+      
+      // Create comprehensive success message with department details
+      const successDetails = departmentSummaries.map(dept => {
+        if (dept.error) {
+          return `❌ ${dept.department}: Failed - ${dept.error}`;
+        }
+        
+        const newStudentsInfo = dept.newStudents && dept.newStudents.length > 0 
+          ? ` (New students: ${dept.newStudents.map(s => s.name).join(', ')})`
+          : '';
+          
+        return `✅ ${dept.department}: ${dept.beforeCount || 0} → ${dept.afterCount || 0} students (${dept.stats.added} new, ${dept.stats.updated} updated, ${dept.stats.skipped} skipped)${newStudentsInfo}`;
+      });
+      
+      setSuccess(
+        `🎉 Import completed successfully!\n\n` +
+        `📊 Overall: ${totalAdded} students added, ${totalUpdated} updated, ${totalSkipped} skipped\n\n` +
+        `📁 Department Details:\n${successDetails.join('\n')}\n\n` +
+        `💡 Check individual departments to see the new students that were added.`
+      );
+      
+      await loadInitialData(); // Refresh data
+      
+    } catch (error) {
+      setError(`Merge failed: ${error.message}`);
     } finally {
       setImporting(false);
     }
@@ -301,6 +501,13 @@ export default function StudentManagement({ uiComponents }) {
             className="hidden"
             id="excel-upload"
           />
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleMergeFileUpload}
+            className="hidden"
+            id="excel-merge-upload"
+          />
           <Button 
             onClick={() => document.getElementById('excel-upload').click()}
             disabled={loading}
@@ -310,6 +517,17 @@ export default function StudentManagement({ uiComponents }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
             </svg>
             Import Excel
+          </Button>
+          <Button 
+            onClick={() => document.getElementById('excel-merge-upload').click()}
+            disabled={loading}
+            variant="outline"
+            className="px-4 py-2.5"
+          >
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            Import & Merge
           </Button>
         </div>
       </div>
@@ -348,7 +566,36 @@ export default function StudentManagement({ uiComponents }) {
           </svg>
           Overview
         </Button>
+        
+        {/* Admin Collection Management Button */}
+        {userProfile && (userProfile.role === 'admin' || userProfile.role === 'super_admin') && (
+          <Button
+            variant={currentView === 'admin' ? 'default' : 'outline'}
+            onClick={() => setCurrentView('admin')}
+            className="px-6 py-2.5 font-medium"
+          >
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Collection Management
+          </Button>
+        )}
+        
         {currentView === 'department' && (
+          <Button
+            variant="outline"
+            onClick={() => setCurrentView('overview')}
+            className="px-6 py-2.5 font-medium"
+          >
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Overview
+          </Button>
+        )}
+        
+        {currentView === 'admin' && (
           <Button
             variant="outline"
             onClick={() => setCurrentView('overview')}
@@ -669,6 +916,46 @@ export default function StudentManagement({ uiComponents }) {
         </div>
       )}
 
+      {/* Admin Collection Management View */}
+      {currentView === 'admin' && (
+        <div className="space-y-6">
+          {/* Admin Sub-navigation */}
+          <div className="border-b border-gray-200 dark:border-gray-700">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setAdminSubView('collections')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  adminSubView === 'collections'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Collection Management
+              </button>
+              <button
+                onClick={() => setAdminSubView('mapping')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  adminSubView === 'mapping'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Department Code Mapping
+              </button>
+            </nav>
+          </div>
+
+          {/* Admin Sub-views */}
+          {adminSubView === 'collections' && (
+            <AdminCollectionManager uiComponents={uiComponents} />
+          )}
+          
+          {adminSubView === 'mapping' && (
+            <CollectionCodeMapper uiComponents={uiComponents} />
+          )}
+        </div>
+      )}
+
       {/* Student Import Modal */}
       <StudentImportModal
         isOpen={showImportModal}
@@ -679,6 +966,20 @@ export default function StudentManagement({ uiComponents }) {
         }}
         fileData={importFileData}
         onConfirmImport={handleImportConfirm}
+        uiComponents={uiComponents}
+      />
+
+      {/* Student Merge Modal */}
+      <StudentMergeModal
+        isOpen={showMergeModal}
+        onClose={() => {
+          setShowMergeModal(false);
+          setMergeFileData(null);
+          setExistingDepartments([]);
+        }}
+        fileData={mergeFileData}
+        existingDepartments={existingDepartments}
+        onConfirmMerge={handleMergeConfirm}
         uiComponents={uiComponents}
       />
     </div>

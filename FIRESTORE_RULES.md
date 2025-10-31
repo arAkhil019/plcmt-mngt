@@ -121,3 +121,51 @@ firebase deploy --only firestore
 - Users cannot delete activities they didn't create
 
 This configuration provides the perfect balance of transparency and security - everyone can see what's happening, but only authorized users can make changes! 🎯✨
+
+---
+
+## Public Student Info Collection
+
+Introduce a dedicated collection to power the public landing page announcements and resources curated by Admins.
+
+- Collection name: `studentPublicInfo`
+- Document shape (example):
+	- title: string
+	- description: string
+	- type: 'announcement' | 'link' | 'resource' | 'faq'
+	- url?: string
+	- category?: string
+	- isActive: boolean
+	- startDate?: timestamp/string (ISO)
+	- endDate?: timestamp/string (ISO)
+	- createdAt: timestamp
+	- updatedAt: timestamp
+	- createdBy, createdByName, lastUpdatedBy, lastUpdatedByName
+
+### Suggested Rules
+
+```rules
+match /databases/{database}/documents {
+	function isAdmin() {
+		return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+					 get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+	}
+
+	match /studentPublicInfo/{docId} {
+		// Public read of active items; optionally enforce visibility window in security rules if dates are timestamps
+		allow get, list, read: if request.time != null; // Public site can read without auth if needed
+
+		// Alternatively, to limit to active only at rules level when using timestamp fields:
+		// allow read: if resource.data.isActive == true &&
+		//   (!('startDate' in resource.data) || resource.data.startDate <= request.time) &&
+		//   (!('endDate' in resource.data) || resource.data.endDate >= request.time);
+
+		// Admin-only writes
+		allow create, update, delete: if request.auth != null && isAdmin();
+	}
+}
+```
+
+Notes:
+- If you store `startDate`/`endDate` as ISO strings, perform visibility filtering on the client (as implemented). If you store them as Firestore Timestamps, you can enforce the window in rules as shown.
+- Keep writes restricted to Admin. CPC can be added by extending `isAdmin()` to include role checks.

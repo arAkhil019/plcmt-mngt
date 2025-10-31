@@ -11,6 +11,7 @@ import {
   LogOutIcon,
   MenuIcon,
   BuildingIcon,
+  ChartIcon,
   CalendarIcon,
   CheckCircleIcon,
   UserIcon,
@@ -21,6 +22,8 @@ import {
   MapPinIcon,
   ChevronDownIcon,
   CheckIcon,
+  GraduationCapIcon,
+  InfoIcon,
 } from "../components/icons";
 import { useAuth } from "../contexts/AuthContext";
 import { logActivity, ACTIVITY_TYPES } from "../utils/activityLogger";
@@ -38,11 +41,13 @@ import ColumnMappingModal from "../components/ColMapModal";
 import AddActivityModal from "../components/AddActivityModal";
 import EditActivityModal from "../components/EditActivityModal";
 import LoginForm from "../components/LoginForm";
+import PublicLanding from "../components/PublicLanding";
 import UserManagement from "../components/UserManagement";
 import StudentManagement from "../components/StudentManagement";
 import ActivityLogsAdmin from "../components/ActivityLogsAdmin";
 import AdminCompanyManager from "../components/admin-company-manager";
 import AdminEmailManager from "../components/AdminEmailManager";
+import AdminStudentInfoManager from "../components/AdminStudentInfoManager";
 import ToastContainer from "../components/ToastContainer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ProgressDialog from "../components/ProgressDialog";
@@ -307,6 +312,8 @@ export default function Home() {
 
   // Password setup dialog state
   const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+  // Public landing login toggle
+  const [showLogin, setShowLogin] = useState(false);
 
   // Helper functions for dialogs
   const showConfirmDialog = (title, message, onConfirm, type = "warning") => {
@@ -339,6 +346,58 @@ export default function Home() {
   const updateProgressDialog = (progress) => {
     setProgressDialog((prev) => ({ ...prev, progress }));
   };
+
+  // Single source of truth for navigation items (DRY for desktop + mobile)
+  const navItems = useMemo(() => {
+    const items = [
+      {
+        id: "dashboard",
+        label: "Dashboard",
+  icon: (props) => <ChartIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin", "cpc", "placement_coordinator"],
+      },
+      {
+        id: "users",
+        label: "Users",
+        icon: (props) => <UsersIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin"],
+      },
+      {
+        id: "students",
+  label: "Students",
+  icon: (props) => <GraduationCapIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin"],
+      },
+      {
+        id: "student-info",
+        label: "Student Info",
+        icon: (props) => <InfoIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin", "cpc"],
+      },
+      {
+        id: "logs",
+        label: "Logs",
+        icon: (props) => <ActivityIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin"],
+      },
+      {
+        id: "companies",
+        label: "Companies",
+        icon: (props) => <BuildingIcon {...props} className={`h-4 w-4 mr-2 ${props?.className || ''}`} />,
+        roles: ["admin", "cpc"],
+      },
+    ];
+
+    const role = userProfile?.role;
+    return items.filter((it) => it.roles.includes(role));
+  }, [userProfile?.role]);
+
+  const handleNavClick = useCallback((id) => {
+    setCurrentPage(id);
+    setSelectedActivity(null);
+    if (id === "dashboard") setDashboardTab("active");
+    setMobileMenuOpen(false);
+  }, [setCurrentPage, setSelectedActivity, setDashboardTab]);
 
   const handlePasswordSetupComplete = () => {
     setShowPasswordSetup(false);
@@ -1301,9 +1360,45 @@ export default function Home() {
     );
   }
 
-  // Show login form if user is not authenticated
+  // Public landing page for unauthenticated users
   if (!user || !userProfile) {
-    return <LoginForm {...uiComponents} />;
+    return showLogin ? (
+      <LoginForm {...uiComponents} />
+    ) : (
+      <PublicLanding onLoginClick={() => setShowLogin(true)} />
+    );
+  }
+
+  // Restrict logged-in access to PC/CPC/Admin only
+  const allowedRoles = new Set(["admin", "cpc", "placement_coordinator"]);
+  if (user && userProfile && !allowedRoles.has(userProfile?.role)) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+        <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
+          <nav className="container mx-auto px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Image src="/globe.svg" alt="Placerly Logo" width={24} height={24} className="h-5 w-5 sm:h-6 sm:w-6 object-contain" />
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Placerly</h1>
+            </div>
+            <button className="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-800 text-sm" onClick={handleLogout}>Logout</button>
+          </nav>
+        </header>
+        <main className="flex-1 container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
+          <div className="max-w-xl w-full text-center bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-2">Access Restricted</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Login is restricted to Placement Coordinators (PC), Central Placement Coordinators (CPC), and Admins.
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              You can continue browsing the public placement calendar without logging in.
+            </p>
+            <div className="mt-4">
+              <a href="/" className="text-sm px-4 py-2 rounded-md bg-gray-900 text-white hover:bg-gray-800">Go to Public Landing</a>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -1341,8 +1436,9 @@ export default function Home() {
         onShowConfirmDialog={showConfirmDialog}
       />
       <div className="bg-gray-50 dark:bg-black min-h-screen text-gray-800 dark:text-gray-200 font-sans">
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 bg-gray-900 text-white text-sm px-3 py-1 rounded">Skip to content</a>
         <header className="bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
-          <nav className="container mx-auto px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between">
+          <nav className="container mx-auto px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between" aria-label="Main">
             <div className="flex items-center gap-2">
               <Image
                 src="/graduation-hat.svg"
@@ -1356,85 +1452,39 @@ export default function Home() {
               </h1>
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
-              <div className="hidden sm:flex items-center gap-2">
-                <Button
-                  variant={currentPage === "dashboard" ? "default" : "outline"}
-                  onClick={() => {
-                    setCurrentPage("dashboard");
-                    setDashboardTab("active"); // Reset to active tab
-                    setSelectedActivity(null);
-                  }}
-                  size="sm"
-                >
-                  Dashboard
-                </Button>
-                {userProfile?.role === "admin" && (
-                  <>
+              <div className="hidden lg:flex items-center gap-2 whitespace-nowrap overflow-x-auto">
+                {navItems.map((item) => {
+                  const isActive = currentPage === item.id;
+                  const Icon = item.icon;
+                  return (
                     <Button
-                      variant={currentPage === "users" ? "default" : "outline"}
-                      onClick={() => {
-                        setCurrentPage("users");
-                        setSelectedActivity(null);
-                      }}
+                      key={item.id}
+                      variant={isActive ? "default" : "outline"}
+                      onClick={() => handleNavClick(item.id)}
                       size="sm"
+                      aria-current={isActive ? "page" : undefined}
                     >
-                      <UsersIcon className="h-4 w-4 mr-2" />
-                      Users
+                      {Icon ? <Icon /> : null}
+                      {item.label}
                     </Button>
-                    <Button
-                      variant={
-                        currentPage === "students" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setCurrentPage("students");
-                        setSelectedActivity(null);
-                      }}
-                      size="sm"
-                    >
-                      🎓 Students
-                    </Button>
-                    <Button
-                      variant={currentPage === "logs" ? "default" : "outline"}
-                      onClick={() => {
-                        setCurrentPage("logs");
-                        setSelectedActivity(null);
-                      }}
-                      size="sm"
-                    >
-                      <ActivityIcon className="h-4 w-4 mr-2" />
-                      Logs
-                    </Button>
-                  </>
-                )}
-                {(userProfile?.role === "admin" || userProfile?.role === "cpc") && (
-                  <Button
-                    variant={
-                      currentPage === "companies" ? "default" : "outline"
-                    }
-                    onClick={() => {
-                      setCurrentPage("companies");
-                      setSelectedActivity(null);
-                    }}
-                    size="sm"
-                  >
-                    <BuildingIcon className="h-4 w-4 mr-2" />
-                    Companies
-                  </Button>
-                )}
+                  );
+                })}
               </div>
               
               {/* Mobile Menu Button */}
               <Button
                 variant="outline"
                 size="sm"
-                className="sm:hidden"
+                className="lg:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-expanded={mobileMenuOpen}
+                aria-label="Toggle menu"
               >
                 <MenuIcon className="h-4 w-4" />
               </Button>
               
               {/* Desktop User Profile */}
-              <div className="hidden sm:flex items-center gap-2 border-l pl-2 sm:pl-4">
+              <div className="hidden lg:flex items-center gap-2 border-l pl-2 sm:pl-4">
                 <div className="text-xs sm:text-sm">
                   <div className="font-medium truncate max-w-24 sm:max-w-none">{userProfile?.name}</div>
                   <div className="text-gray-500 capitalize">
@@ -1447,7 +1497,7 @@ export default function Home() {
               </div>
               
               {/* Mobile User Profile */}
-              <div className="sm:hidden flex items-center gap-1">
+              <div className="lg:hidden flex items-center gap-1">
                 <Button variant="outline" size="sm" onClick={handleLogout}>
                   <LogOutIcon className="h-4 w-4" />
                 </Button>
@@ -1457,82 +1507,25 @@ export default function Home() {
           
           {/* Mobile Menu */}
           {mobileMenuOpen && (
-            <div className="sm:hidden bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 px-3 py-2">
+            <div className="lg:hidden bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 px-3 py-2">
               <div className="flex flex-col gap-2">
-                <Button
-                  variant={currentPage === "dashboard" ? "default" : "outline"}
-                  onClick={() => {
-                    setCurrentPage("dashboard");
-                    setDashboardTab("active"); // Reset to active tab
-                    setSelectedActivity(null);
-                    setMobileMenuOpen(false);
-                  }}
-                  size="sm"
-                  className="justify-start"
-                >
-                  Dashboard
-                </Button>
-                {userProfile?.role === "admin" && (
-                  <>
+                {navItems.map((item) => {
+                  const isActive = currentPage === item.id;
+                  const Icon = item.icon;
+                  return (
                     <Button
-                      variant={currentPage === "users" ? "default" : "outline"}
-                      onClick={() => {
-                        setCurrentPage("users");
-                        setSelectedActivity(null);
-                        setMobileMenuOpen(false);
-                      }}
+                      key={item.id}
+                      variant={isActive ? "default" : "outline"}
+                      onClick={() => handleNavClick(item.id)}
                       size="sm"
                       className="justify-start"
+                      aria-current={isActive ? "page" : undefined}
                     >
-                      <UsersIcon className="h-4 w-4 mr-2" />
-                      Users
+                      {Icon ? <Icon /> : null}
+                      {item.label}
                     </Button>
-                    <Button
-                      variant={
-                        currentPage === "students" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setCurrentPage("students");
-                        setSelectedActivity(null);
-                        setMobileMenuOpen(false);
-                      }}
-                      size="sm"
-                      className="justify-start"
-                    >
-                      🎓 Students
-                    </Button>
-                    <Button
-                      variant={currentPage === "logs" ? "default" : "outline"}
-                      onClick={() => {
-                        setCurrentPage("logs");
-                        setSelectedActivity(null);
-                        setMobileMenuOpen(false);
-                      }}
-                      size="sm"
-                      className="justify-start"
-                    >
-                      <ActivityIcon className="h-4 w-4 mr-2" />
-                      Logs
-                    </Button>
-                  </>
-                )}
-                {(userProfile?.role === "admin" || userProfile?.role === "cpc") && (
-                  <Button
-                    variant={
-                      currentPage === "companies" ? "default" : "outline"
-                    }
-                    onClick={() => {
-                      setCurrentPage("companies");
-                      setSelectedActivity(null);
-                      setMobileMenuOpen(false);
-                    }}
-                    size="sm"
-                    className="justify-start"
-                  >
-                    <BuildingIcon className="h-4 w-4 mr-2" />
-                    Companies
-                  </Button>
-                )}
+                  );
+                })}
                 <div className="border-t pt-2">
                   <div className="text-sm text-gray-600 dark:text-gray-400 px-3 py-1">
                     {userProfile?.name}
@@ -1545,7 +1538,7 @@ export default function Home() {
             </div>
           )}
         </header>
-        <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <main id="main-content" className="container mx-auto p-4 sm:p-6 lg:p-8">
           {currentPage === "dashboard" && (
             <DashboardWithUI
               activities={activities}
@@ -1577,6 +1570,18 @@ export default function Home() {
           )}
           {currentPage === "students" && userProfile?.role === "admin" && (
             <StudentManagementWithUI />
+          )}
+          {currentPage === "student-info" && userProfile?.role === "admin" && (
+            <AdminStudentInfoManager
+              Card={Card}
+              CardHeader={CardHeader}
+              CardTitle={CardTitle}
+              CardDescription={CardDescription}
+              CardContent={CardContent}
+              Button={Button}
+              Badge={Badge}
+              userProfile={userProfile}
+            />
           )}
           {currentPage === "companies" && (userProfile?.role === "admin" || userProfile?.role === "cpc") && (
             <AdminCompanyManager

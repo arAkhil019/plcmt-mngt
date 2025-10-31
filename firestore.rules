@@ -58,10 +58,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Activities collection
+    // Activities collection (NOT public): only authenticated
     match /activities/{activityId} {
-      // Read permissions - ALL authenticated users can view all activities
-      allow read: if request.auth != null;
+      // Read permissions - authenticated only (no public)
+      allow read: if isAuthenticated();
       
       // Create permissions - Admin and CPC have full access
       allow create: if request.auth != null && 
@@ -163,6 +163,19 @@ service cloud.firestore {
       allow read, write: if (isAdmin() || isCPC()) && 
                          request.auth != null && 
                          resource != null;
+    }
+
+    // Public Activities collection (publicly readable)
+    match /publicActivities/{docId} {
+      // Public read access (unauthenticated allowed)
+      allow read: if true;
+      // Writes: Admin/CPC/PC can publish/unpublish
+      allow write: if isAdmin() || isCPC() || isPlacementCoordinator();
+    }
+
+    // Student Public Info (NOT public): keep private to app/admin only
+    match /studentPublicInfo/{docId} {
+      allow read, write: if isAdmin();
     }
 
     // Default rule for any other collections - Admin and CPC have full access

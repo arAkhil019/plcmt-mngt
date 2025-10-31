@@ -57,6 +57,10 @@ export default function Dashboard({
   const [isLoadingCompanyActivities, setIsLoadingCompanyActivities] = useState(false);
   const [companiesError, setCompaniesError] = useState("");
   
+  // Recent activities state
+  const [showRecentOnly, setShowRecentOnly] = useState(true); // Default to showing recent activities
+  const [recentActivitiesLimit] = useState(10); // Number of recent activities to show
+  
   // Debouncing and optimization states
   const refreshTimeoutRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -67,7 +71,7 @@ export default function Dashboard({
       setIsLoadingCompanies(true);
       setCompaniesError("");
       
-      // Load companies normally
+      // Load companies in their default order
       const companiesData = await companiesService.getCompaniesWithCounts();
       setCompanies(companiesData);
     } catch (error) {
@@ -78,18 +82,32 @@ export default function Dashboard({
     }
   }, []);
 
-  const loadCompanyActivities = useCallback(async (companyId) => {
+  const loadCompanyActivities = useCallback(async (companyId, loadRecent = showRecentOnly) => {
     try {
       setIsLoadingCompanyActivities(true);
       const activities = await companiesService.getCompanyActivities(companyId);
-      setCompanyActivities(activities);
+      
+      if (loadRecent) {
+        // Sort by updatedAt descending and take only recent activities
+        const sortedActivities = activities.slice().sort((a, b) => {
+          const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return bTime - aTime;
+        });
+        // Take only the most recent activities
+        const recentActivities = sortedActivities.slice(0, recentActivitiesLimit);
+        setCompanyActivities(recentActivities);
+      } else {
+        // Show all activities in their default order
+        setCompanyActivities(activities);
+      }
     } catch (error) {
       console.error("Error loading company activities:", error);
       setCompanyActivities([]);
     } finally {
       setIsLoadingCompanyActivities(false);
     }
-  }, []);
+  }, [showRecentOnly, recentActivitiesLimit]);
 
   // Load companies on component mount - use empty dependency array to prevent infinite loops
   useEffect(() => {
@@ -108,7 +126,7 @@ export default function Dashboard({
           console.log(`🎯 [DASHBOARD] Executing pending navigation to ${targetCompany} activities`);
           setSelectedCompany(company);
           setViewMode("activities");
-          loadCompanyActivities(company.id).then(() => {
+          loadCompanyActivities(company.id, showRecentOnly).then(() => {
             // Scroll to the target activity if specified
             if (targetActivityId) {
               setTimeout(() => {
@@ -146,7 +164,7 @@ export default function Dashboard({
         const refreshPromises = [loadCompanies()];
         
         if (selectedCompany && viewMode === "activities") {
-          refreshPromises.push(loadCompanyActivities(selectedCompany.id));
+          refreshPromises.push(loadCompanyActivities(selectedCompany.id, showRecentOnly));
         }
         
         Promise.all(refreshPromises)
@@ -163,7 +181,7 @@ export default function Dashboard({
     }, delay);
     
     refreshTimeoutRef.current = newTimeout;
-  }, [selectedCompany, isRefreshing, viewMode]); // Remove function dependencies to prevent loops
+  }, [selectedCompany, isRefreshing, viewMode, showRecentOnly]); // Remove function dependencies to prevent loops
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -178,17 +196,28 @@ export default function Dashboard({
     try {
       setSelectedCompany(company);
       setViewMode("activities");
-      await loadCompanyActivities(company.id);
+      await loadCompanyActivities(company.id, showRecentOnly);
     } catch (error) {
       console.error('Error selecting company:', error);
     }
-  }, [loadCompanyActivities]);
+  }, [loadCompanyActivities, showRecentOnly]);
 
   const handleBackToCompanies = () => {
     setViewMode("companies");
     setSelectedCompany(null);
     setCompanyActivities([]);
   };
+
+  // Toggle between recent and all activities
+  const handleToggleRecentActivities = useCallback(async () => {
+    const newShowRecentOnly = !showRecentOnly;
+    setShowRecentOnly(newShowRecentOnly);
+    
+    // Reload activities with the new mode if we're currently viewing activities
+    if (selectedCompany && viewMode === "activities") {
+      await loadCompanyActivities(selectedCompany.id, newShowRecentOnly);
+    }
+  }, [showRecentOnly, selectedCompany, viewMode, loadCompanyActivities]);
 
   // State control functions to be exposed to parent component
   const stateControlFunctions = useCallback(() => ({
@@ -200,7 +229,7 @@ export default function Dashboard({
           // Set the company and switch to activities view
           setSelectedCompany(company);
           setViewMode("activities");
-          await loadCompanyActivities(company.id);
+          await loadCompanyActivities(company.id, showRecentOnly);
           
           // Optional: Scroll to the specific activity if needed
           if (activityId) {
@@ -545,11 +574,22 @@ export default function Dashboard({
             <div className="flex items-center gap-4">
               <h2 className="text-xl font-semibold">{selectedCompany.name} Activities</h2>
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                <span>Total: {companyActivities.length} activities</span>
+                <span>
+                  {showRecentOnly ? `Recent: ${companyActivities.length}/${recentActivitiesLimit}` : `Total: ${companyActivities.length}`} activities
+                </span>
               </div>
             </div>
             
             <div className="flex items-center gap-2">
+              <Button
+                onClick={handleToggleRecentActivities}
+                disabled={isLoadingCompanyActivities || isRefreshing}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                {showRecentOnly ? 'Show All' : 'Show Recent'}
+              </Button>
               <Button
                 onClick={() => debouncedRefresh(0)} // Immediate refresh when manually triggered
                 disabled={isLoadingCompanyActivities || isRefreshing}
